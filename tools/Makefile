@@ -9,7 +9,7 @@
 #CXX = icpc
 
 # OSX
-CXX = g++
+CXX = g++-7
 
 CXXFLAGS = -O2 
 

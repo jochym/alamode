@@ -39,6 +39,7 @@ parser.add_option("--ex", action="store", type="string", dest="plot_ex", default
 
 # font styles
 mpl.rc('font', **{'family': 'Times New Roman', 'sans-serif': ['Helvetica']})
+#mpl.rc('text', usetex=True)
 
 # line colors and styles
 color = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7']
