@@ -36,6 +36,7 @@
 #include "integration.h"
 #include "scph.h"
 #include "ewald.h"
+#include "thermodynamics.h"
 #include <boost/lexical_cast.hpp>
 
 #include <boost/algorithm/string.hpp>
@@ -118,6 +119,8 @@ void Input::parse_general_vars()
     bool sym_time_reversal, use_triplet_symmetry;
     bool selenergy_offdiagonal;
     bool update_fc2;
+    bool classical;
+    unsigned int band_connection;
 
     struct stat st;
     std::string prefix, mode, fcsinfo, fc2info;
@@ -126,7 +129,7 @@ void Input::parse_general_vars()
     std::string str_tmp;
     std::string str_allowed_list = "PREFIX MODE NSYM TOLERANCE PRINTSYM FCSXML FC2XML TMIN TMAX DT \
                                    NBANDS NONANALYTIC BORNINFO NA_SIGMA ISMEAR EPSILON EMIN EMAX DELTA_E \
-                                   RESTART TREVSYM NKD KD MASS TRISYM PREC_EWALD";
+                                   RESTART TREVSYM NKD KD MASS TRISYM PREC_EWALD CLASSICAL BCONNECT";
     std::string str_no_defaults = "PREFIX MODE FCSXML NKD KD MASS";
     std::vector<std::string> no_defaults;
     std::vector<std::string> kdname_v, masskd_v;
@@ -204,6 +207,8 @@ void Input::parse_general_vars()
     printsymmetry = false;
     sym_time_reversal = false;
     use_triplet_symmetry = true;
+    classical = false;
+    band_connection = 0;
 
     prec_ewald = 1.0e-12;
 
@@ -249,8 +254,13 @@ void Input::parse_general_vars()
     assign_val(ismear, "ISMEAR", general_var_dict);
     assign_val(epsilon, "EPSILON", general_var_dict);
     assign_val(na_sigma, "NA_SIGMA", general_var_dict);
-
+    assign_val(classical, "CLASSICAL", general_var_dict);
+    assign_val(band_connection, "BCONNECT", general_var_dict);
     assign_val(use_triplet_symmetry, "TRISYM", general_var_dict);
+
+    if (band_connection < 0 || band_connection > 2) {
+        error->exit("parse_general_vars", "BCONNECT-tag can take 0, 1, or 2.");
+    }
 
     if (nonanalytic == 3) {
         assign_val(prec_ewald, "PREC_EWALD", general_var_dict);
@@ -269,6 +279,12 @@ void Input::parse_general_vars()
 
     if (nonanalytic > 3) {
         error->exit("parse_general_vars", "NONANALYTIC-tag can take 0, 1, 2, or 3.");
+    }
+    if (nonanalytic == 3) {
+        if (mode == "SCPH") {
+            error->exit("parse_general_vars",
+                        "Sorry. NONANALYTIC=3 is not supported for MODE = SCPH.");
+        }
     }
 
     // Copy the values to appropriate classes.
@@ -304,6 +320,7 @@ void Input::parse_general_vars()
     dynamical->na_sigma = na_sigma;
     writes->nbands = nbands;
     dynamical->file_born = borninfo;
+    dynamical->band_connection = band_connection;
     integration->epsilon = epsilon;
     fcs_phonon->file_fcs = fcsinfo;
     if (!fc2info.empty()) {
@@ -313,7 +330,7 @@ void Input::parse_general_vars()
     }
     fcs_phonon->file_fc2 = fc2info;
     fcs_phonon->update_fc2 = update_fc2;
-
+    thermodynamics->classical = classical;
     integration->ismear = ismear;
     relaxation->use_triplet_symmetry = use_triplet_symmetry;
 
@@ -412,11 +429,11 @@ void Input::parse_scph_vars()
         }
 
         if (kmesh_v.size() != 3) {
-            error->exit("parse_general_vars", 
+            error->exit("parse_general_vars",
                         "The number of entries for KMESH_SCPH has to be 3.");
         }
     } else {
-        error->exit("parse_general_vars", 
+        error->exit("parse_general_vars",
                     "Please specify KMESH_SCPH for mode = SCPH");
     }
 
@@ -435,11 +452,11 @@ void Input::parse_scph_vars()
         }
 
         if (kmesh_interpolate_v.size() != 3) {
-            error->exit("parse_general_vars", 
+            error->exit("parse_general_vars",
                         "The number of entries for KMESH_INTERPOLATE has to be 3.");
         }
     } else {
-        error->exit("parse_general_vars", 
+        error->exit("parse_general_vars",
                     "Please specify KMESH_INTERPOLATE for mode = SCPH");
     }
 
@@ -457,7 +474,7 @@ void Input::parse_scph_vars()
     scph->tolerance_scph = tolerance_scph;
     scph->lower_temp = lower_temp;
     scph->warmstart_scph = warm_start;
-   
+
     kmesh_v.clear();
     kmesh_interpolate_v.clear();
 
@@ -706,7 +723,7 @@ void Input::parse_cell_parameter()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t "));
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -726,7 +743,7 @@ void Input::parse_cell_parameter()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t "));
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -800,7 +817,7 @@ void Input::parse_kpoints()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t "));
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -820,7 +837,7 @@ void Input::parse_kpoints()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t "));
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;

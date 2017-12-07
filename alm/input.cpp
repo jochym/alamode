@@ -29,9 +29,13 @@
 
 using namespace ALM_NS;
 
-Input::Input(ALM *alm, int narg, char **arg): Pointers(alm) {}
+Input::Input(ALM *alm, int narg, char **arg): Pointers(alm)
+{
+}
 
-Input::~Input() {}
+Input::~Input()
+{
+}
 
 void Input::parse_input(int narg, char **arg)
 {
@@ -103,10 +107,11 @@ void Input::parse_general_vars()
     std::string *kdname;
     double **magmom, magmag;
     double tolerance;
+    double tolerance_constraint;
 
     std::vector<std::string> kdname_v, periodic_v, magmom_v, str_split;
     std::string str_allowed_list = "PREFIX MODE NAT NKD NSYM KD PERIODIC PRINTSYM TOLERANCE DBASIS TRIMEVEN\
-                                   MAGMOM NONCOLLINEAR TREVSYM HESSIAN";
+                                   MAGMOM NONCOLLINEAR TREVSYM HESSIAN TOL_CONST";
     std::string str_no_defaults = "PREFIX MODE NAT NKD KD";
     std::vector<std::string> no_defaults;
     std::map<std::string, std::string> general_var_dict;
@@ -191,6 +196,12 @@ void Input::parse_general_vars()
         tolerance = 1.0e-6;
     } else {
         assign_val(tolerance, "TOLERANCE", general_var_dict);
+    }
+
+    if (general_var_dict["TOL_CONST"].empty()) {
+        tolerance_constraint = eps6;
+    } else {
+        assign_val(tolerance_constraint, "TOL_CONST", general_var_dict);
     }
 
     // Convert MAGMOM input to array
@@ -338,6 +349,7 @@ void Input::parse_general_vars()
     system->noncollinear = noncollinear;
     symmetry->trev_sym_mag = trevsym;
     writes->print_hessian = print_hessian;
+    constraint->tolerance_constraint = tolerance_constraint;
 
     if (mode == "suggest") {
         displace->disp_basis = str_disp_basis;
@@ -378,7 +390,7 @@ void Input::parse_cell_parameter()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t "));
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\n\r "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -398,7 +410,7 @@ void Input::parse_cell_parameter()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t "));
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\n\r "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -878,8 +890,8 @@ void Input::parse_atomic_positions()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-
-            boost::trim_left(line_wo_comment);
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\n\r "));
+            //            boost::trim_left(line_wo_comment);
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
 
@@ -898,8 +910,8 @@ void Input::parse_atomic_positions()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-
-            boost::trim_left(line_wo_comment);
+            boost::trim_if(line_wo_comment, boost::is_any_of("\t\n\r "));
+            //            boost::trim_left(line_wo_comment);
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
 

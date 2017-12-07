@@ -57,6 +57,7 @@ ALM::ALM(int narg, char **arg)
 
     if (mode == "fitting") {
 
+        fcs->init();
         constraint->setup();
         fitting->fitmain();
         writes->writeall();
@@ -70,7 +71,7 @@ ALM::ALM(int narg, char **arg)
 
     finalize();
 
-    std::cout << std::endl << " Job finished at " 
+    std::cout << std::endl << " Job finished at "
         << timer->DateAndTime() << std::endl;
 }
 
@@ -94,7 +95,6 @@ void ALM::initialize()
     files->init();
     symmetry->init();
     interaction->init();
-    fcs->init();
 }
 
 ALM::~ALM()
@@ -116,4 +116,3 @@ void ALM::finalize()
     delete writes;
     delete memory;
 }
-

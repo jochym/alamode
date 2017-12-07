@@ -100,6 +100,9 @@ void Writes::write_input_vars()
     std::cout << "  ISMEAR = " << integration->ismear
         << "; EPSILON = " << integration->epsilon << std::endl;
     std::cout << std::endl;
+    std::cout << "  CLASSICAL = " << thermodynamics->classical << std::endl;
+    std::cout << "  BCONNECT = " << dynamical->band_connection << std::endl;
+    std::cout << std::endl;
 
     if (phon->mode == "RTA") {
         std::cout << "  RESTART = " << phon->restart_flag << std::endl;
@@ -109,10 +112,10 @@ void Writes::write_input_vars()
         std::cout << " Scph:" << std::endl;
         std::cout << "  KMESH_INTERPOLATE = ";
         for (i = 0; i < 3; ++i) std::cout << std::setw(5) << scph->kmesh_interpolate[i];
-        std::cout  << std::endl;
+        std::cout << std::endl;
         std::cout << "  KMESH_SCPH        = ";
         for (i = 0; i < 3; ++i) std::cout << std::setw(5) << scph->kmesh_scph[i];
-        std::cout  << std::endl;
+        std::cout << std::endl;
         std::cout << "  SELF_OFFDIAG = " << scph->selfenergy_offdiagonal << std::endl;
         std::cout << "  IALGO = " << scph->ialgo << std::endl << std::endl;
         std::cout << "  RESTART_SCPH = " << scph->restart_scph << std::endl;
@@ -217,7 +220,7 @@ void Writes::setup_result_io()
             std::string line_tmp, str_tmp;
             int natmin_tmp, nkd_tmp;
             int nk_tmp[3], nksym_tmp;
-            int ismear;
+            int ismear, is_classical;
             double epsilon_tmp, T1, T2, delta_T;
 
 
@@ -261,6 +264,25 @@ void Writes::setup_result_io()
                 kpoint->nk_reduced == nksym_tmp)) {
                 error->exit("setup_result_io",
                             "KPOINT information is not consistent");
+            }
+
+            found_tag = false;
+            while (fs_result >> line_tmp) {
+                if (line_tmp == "#CLASSICAL") {
+                    found_tag = true;
+                    break;
+                }
+            }
+            if (!found_tag) {
+                std::cout << " Could not find the #CLASSICAL tag in the restart file." << std::endl;
+                std::cout << " CLASSIACAL = 0 is assumed." << std::endl;
+                is_classical = 0;
+            } else {
+                fs_result >> is_classical;
+            }
+            if (static_cast<bool>(is_classical) != thermodynamics->classical) {
+                error->warn("setup_result_io",
+                            "CLASSICAL val is not consistent");
             }
 
             found_tag = false;
@@ -357,6 +379,10 @@ void Writes::setup_result_io()
             fs_result.unsetf(std::ios::fixed);
 
             fs_result << "#END KPOINT" << std::endl;
+
+            fs_result << "#CLASSICAL" << std::endl;
+            fs_result << thermodynamics->classical << std::endl;
+            fs_result << "#END CLASSICAL" << std::endl;
 
             fs_result << "#FCSXML" << std::endl;
             fs_result << fcs_phonon->file_fcs << std::endl;
@@ -572,18 +598,54 @@ void Writes::write_phonon_bands()
     ofs_bands << "#" << str_kval << std::endl;
     ofs_bands << "# k-axis, Eigenvalues [cm^-1]" << std::endl;
 
-    for (i = 0; i < nk; ++i) {
-        ofs_bands << std::setw(8) << std::fixed << kaxis[i];
-        for (j = 0; j < nbands; ++j) {
-            ofs_bands << std::setw(15) << std::scientific << in_kayser(eval[i][j]);
+    if (dynamical->band_connection == 0) {
+        for (i = 0; i < nk; ++i) {
+            ofs_bands << std::setw(8) << std::fixed << kaxis[i];
+            for (j = 0; j < nbands; ++j) {
+                ofs_bands << std::setw(15) << std::scientific << in_kayser(eval[i][j]);
+            }
+            ofs_bands << std::endl;
         }
-        ofs_bands << std::endl;
+    } else {
+        for (i = 0; i < nk; ++i) {
+            ofs_bands << std::setw(8) << std::fixed << kaxis[i];
+            for (j = 0; j < nbands; ++j) {
+                ofs_bands << std::setw(15) << std::scientific
+                    << in_kayser(eval[i][dynamical->index_bconnect[i][j]]);
+            }
+            ofs_bands << std::endl;
+        }
     }
 
     ofs_bands.close();
 
     std::cout << "  " << std::setw(input->job_title.length() + 12) << std::left << file_bands;
     std::cout << " : Phonon band structure" << std::endl;
+
+    if (dynamical->band_connection == 2) {
+        std::ofstream ofs_connect;
+        std::string file_connect = input->job_title + ".connection";
+
+        ofs_connect.open(file_connect.c_str(), std::ios::out);
+        if (!ofs_connect)
+            error->exit("write_phonon_bands",
+                        "cannot open file_connect");
+
+        ofs_connect << "# " << str_kpath << std::endl;
+        ofs_connect << "#" << str_kval << std::endl;
+        ofs_connect << "# k-axis, mapping" << std::endl;
+
+        for (i = 0; i < nk; ++i) {
+            ofs_connect << std::setw(8) << std::fixed << kaxis[i];
+            for (j = 0; j < nbands; ++j) {
+                ofs_connect << std::setw(5) << dynamical->index_bconnect[i][j] + 1;
+            }
+            ofs_connect << std::endl;
+        }
+        ofs_connect.close();
+        std::cout << "  " << std::setw(input->job_title.length() + 12) << std::left << file_connect;
+        std::cout << " : Connectivity map information of band dispersion" << std::endl;
+    }
 }
 
 void Writes::write_phonon_vel()
