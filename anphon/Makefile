@@ -23,7 +23,7 @@ LINKER = ${MPICXX}
 CXXL = ${CXX}
 LDFLAGS = -lgomp
 
-LAPACK = -lopenblas -llapack
+LAPACK = -lblas -llapack
 LIBS = ${LAPACK} -lfftw3
 
 #----------------------------------------------
