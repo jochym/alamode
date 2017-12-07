@@ -17,14 +17,14 @@
 
 MPICXX = mpicxx
 CXXFLAGS = -O2 -fopenmp 
-INCLUDE = -I../include
+INCLUDE = -I../include -I/usr/include/eigen3
 
 LINKER = ${MPICXX}
 CXXL = ${CXX}
 LDFLAGS = -lgomp
 
-LAPACK = -lclapack
-LIBS = ${LAPACK}
+LAPACK = -lopenblas -llapack
+LIBS = ${LAPACK} -lfftw3
 
 #----------------------------------------------
 # General rules
@@ -39,7 +39,8 @@ CXXSRC= phonons.cpp error.cpp fcs_phonon.cpp parsephon.cpp dynamical.cpp  \
 	main.cpp memory.cpp system.cpp timer.cpp write_phonons.cpp kpoint.cpp \
 	phonon_dos.cpp phonon_velocity.cpp integration.cpp relaxation.cpp \
 	thermodynamics.cpp conductivity.cpp symmetry_core.cpp \
-        mpi_common.cpp gruneisen.cpp isotope.cpp selfenergy.cpp
+        mpi_common.cpp gruneisen.cpp isotope.cpp selfenergy.cpp \
+	scph.cpp ewald.cpp
 
 OBJS= ${CXXSRC:.cpp=.o}
 

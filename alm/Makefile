@@ -14,7 +14,7 @@ INCLUDE = -I../include
 CXXL = ${CXX}
 LDFLAGS = -lgomp
 
-LAPACK = -lclapack
+LAPACK = -llapack
 LIBS = ${LAPACK}
 
 #-----------------------------------------------
