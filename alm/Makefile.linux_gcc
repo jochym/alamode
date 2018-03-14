@@ -1,0 +1,50 @@
+.SUFFIXES: .h .cpp
+#-----------------------------------------------
+# Makefile for the program 'ALM'.
+# Please modify the variables properly.
+# We recommend to use Intel c++ compiler.
+#-----------------------------------------------
+
+# Use gcc >= 4.8 to use OpenMP 
+# OpenMP-enabled gcc can be installed via homebrew
+CXX = g++
+CXXFLAGS = -O2 -fopenmp 
+INCLUDE = -I../include
+
+CXXL = ${CXX}
+LDFLAGS = -lgomp
+
+LAPACK = -lclapack
+LIBS = ${LAPACK}
+
+#-----------------------------------------------
+# General rules 
+#-----------------------------------------------
+
+.cpp.o:
+	${CXX} ${CXXFLAGS} ${INCLUDE} -c $<
+
+PROG = alm
+
+CXXSRC= alamode.cpp constraint.cpp error.cpp fcs.cpp files.cpp \
+	fitting.cpp input.cpp interaction.cpp main.cpp memory.cpp \
+	patterndisp.cpp symmetry.cpp system.cpp timer.cpp writes.cpp 
+
+OBJS= ${CXXSRC:.cpp=.o}
+
+default: alm
+
+all: ${PROG}
+
+alm: ${OBJS}
+	${CXXL} ${LDFLAGS} -o $@ ${OBJS} ${LIBS}
+
+clean:
+	rm -f ${OBJS}
+
+.PHONY: clean
+
+depend:
+	gcc -MM *.cpp > .depend
+
+-include .depend
