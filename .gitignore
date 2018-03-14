@@ -7,3 +7,4 @@ tools/dfc2
 tools/qe2alm
 alm/Makefile
 anphon/Makefile
+__pycache__
