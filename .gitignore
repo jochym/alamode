@@ -1,5 +1,8 @@
+*.o
+*~
 alm/alm
 anphon/anphon
 tools/analyze_phonons
+tools/dfc2
 tools/qe2alm
-*~
+
