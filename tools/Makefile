@@ -6,7 +6,7 @@
 #-----------------------------------------------
 
 #Intel compiler
-CXX = icpc
+CXX = icpc -std=c++11
 
 # OSX
 #CXX = g++
