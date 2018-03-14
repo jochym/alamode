@@ -8,14 +8,13 @@
  or http://opensource.org/licenses/mit-license.php for information.
 */
 
-#include "mpi_common.h"
+#include "thermodynamics.h"
+#include "constants.h"
 #include "dynamical.h"
 #include "error.h"
 #include "kpoint.h"
-#include "thermodynamics.h"
 #include "pointers.h"
 #include "system.h"
-#include "constants.h"
 
 using namespace PHON_NS;
 
@@ -24,9 +23,7 @@ Thermodynamics::Thermodynamics(PHON *phon): Pointers(phon)
     T_to_Ryd = k_Boltzmann / Ryd;
 }
 
-Thermodynamics::~Thermodynamics()
-{
-};
+Thermodynamics::~Thermodynamics() {};
 
 void Thermodynamics::setup()
 {
@@ -72,37 +69,42 @@ double Thermodynamics::Cv_tot(const double T)
 {
     int i;
     unsigned int ik, is;
-    unsigned int nk = kpoint->nk;
     unsigned int ns = dynamical->neval;
     double omega;
     double ret = 0.0;
-    int N = nk * ns;
+
+    int N = kpoint->nk_irred * ns;
+    int ik_irred;
 
     if (classical) {
-#pragma omp parallel for private(ik, is, omega), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
 
             omega = dynamical->eval_phonon[ik][is];
+
             if (omega < 0.0) continue;
 
-            ret += Cv_classical(omega, T);
+            ret += Cv_classical(omega, T) * kpoint->weight_k[ik_irred];
         }
     } else {
-#pragma omp parallel for private(ik, is, omega), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
 
             omega = dynamical->eval_phonon[ik][is];
+
             if (omega < 0.0) continue;
 
-            ret += Cv(omega, T);
+            ret += Cv(omega, T) * kpoint->weight_k[ik_irred];
         }
     }
 
-    return ret / static_cast<double>(nk);
+    return ret;
 }
 
 double Thermodynamics::Cv_Debye(const double T,
@@ -110,12 +112,12 @@ double Thermodynamics::Cv_Debye(const double T,
 {
     unsigned int natmin = system->natmin;
     unsigned int i;
-    double d_theta, theta, theta_max;
+    double theta, theta_max;
     unsigned int ntheta;
 
     double x, y;
     double ret;
-    d_theta = 0.001;
+    double d_theta = 0.001;
 
     if (TD < eps) {
         error->exit("Cv_Debye", "Too small TD");
@@ -126,28 +128,27 @@ double Thermodynamics::Cv_Debye(const double T,
 
     if (T < eps) {
         return 0.0;
-    } else {
-        x = TD / T;
-        theta_max = atan(x);
-
-        ret = 0.0;
-        ntheta = static_cast<unsigned int>(theta_max / d_theta);
-
-        for (i = 0; i < ntheta; ++i) {
-            theta = static_cast<double>(i) * d_theta;
-            y = tan(theta);
-            if (y > eps) {
-                ret += std::pow(y, 4) * std::exp(y)
-                    / std::pow((std::exp(y) - 1.0) * cos(theta), 2);
-            }
-        }
-        y = tan(theta_max);
-        ret += 0.5 * std::pow(y, 4) * std::exp(y)
-            / std::pow((std::exp(y) - 1.0) * cos(theta_max), 2);
-
-        return 9.0 * static_cast<double>(natmin) * k_Boltzmann
-            * ret * d_theta / std::pow(x, 3);
     }
+    x = TD / T;
+    theta_max = atan(x);
+
+    ret = 0.0;
+    ntheta = static_cast<unsigned int>(theta_max / d_theta);
+
+    for (i = 0; i < ntheta; ++i) {
+        theta = static_cast<double>(i) * d_theta;
+        y = tan(theta);
+        if (y > eps) {
+            ret += std::pow(y, 4) * std::exp(y)
+                / std::pow((std::exp(y) - 1.0) * cos(theta), 2);
+        }
+    }
+    y = tan(theta_max);
+    ret += 0.5 * std::pow(y, 4) * std::exp(y)
+        / std::pow((std::exp(y) - 1.0) * cos(theta_max), 2);
+
+    return 9.0 * static_cast<double>(natmin) * k_Boltzmann
+        * ret * d_theta / std::pow(x, 3);
 }
 
 void Thermodynamics::Debye_T(const double T,
@@ -174,129 +175,136 @@ double Thermodynamics::internal_energy(const double T)
 {
     int i;
     unsigned int ik, is;
-    unsigned int nk = kpoint->nk;
     unsigned int ns = dynamical->neval;
     double omega;
     double ret = 0.0;
 
-    int N = nk * ns;
+    int N = kpoint->nk_irred * ns;
+    int ik_irred;
 
     if (classical) {
-#pragma omp parallel for private(ik, is, omega), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
             omega = dynamical->eval_phonon[ik][is];
 
             if (omega < eps8) continue;
 
-            ret += T_to_Ryd * T;
+            ret += T_to_Ryd * T * kpoint->weight_k[ik_irred];
         }
         ret *= 2.0;
+
     } else {
-#pragma omp parallel for private(ik, is, omega), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
             omega = dynamical->eval_phonon[ik][is];
 
             if (omega < eps8) continue;
 
-            ret += omega * coth_T(omega, T);
+            ret += omega * coth_T(omega, T) * kpoint->weight_k[ik_irred];
         }
-    }
 
-    return ret * 0.5 / static_cast<double>(nk);
+    }
+    return ret * 0.5;
 }
 
 double Thermodynamics::vibrational_entropy(const double T)
 {
     int i;
     unsigned int ik, is;
-    unsigned int nk = kpoint->nk;
     unsigned int ns = dynamical->neval;
     double omega, x;
     double ret = 0.0;
 
-    int N = nk * ns;
+    int N = kpoint->nk_irred * ns;
+    int ik_irred;
 
     if (classical) {
-#pragma omp parallel for private(ik, is, omega, x), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega, x), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
             omega = dynamical->eval_phonon[ik][is];
 
             if (omega < eps8 || std::abs(T) < eps) continue;
 
             x = omega / (T * T_to_Ryd);
-            ret += std::log(x) - 1.0;
+            ret += (std::log(x) - 1.0) * kpoint->weight_k[ik_irred];
         }
+
     } else {
-#pragma omp parallel for private(ik, is, omega, x), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega, x), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
             omega = dynamical->eval_phonon[ik][is];
 
             if (omega < eps8 || std::abs(T) < eps) continue;
 
             x = omega / (T * T_to_Ryd);
-            ret += std::log(1.0 - std::exp(-x)) - x / (std::exp(x) - 1.0);
+            ret += (std::log(1.0 - std::exp(-x)) - x / (std::exp(x) - 1.0)) * kpoint->weight_k[ik_irred];
         }
     }
-
-
-    return -k_Boltzmann * ret / static_cast<double>(nk);
+    return -k_Boltzmann * ret;
 }
 
 double Thermodynamics::free_energy(const double T)
 {
     int i;
     unsigned int ik, is;
-    unsigned int nk = kpoint->nk;
     unsigned int ns = dynamical->neval;
     double omega, x;
     double ret = 0.0;
 
-    int N = nk * ns;
+    int N = kpoint->nk_irred * ns;
+    int ik_irred;
 
     if (classical) {
-#pragma omp parallel for private(ik, is, omega, x), reduction(+:ret)
+#pragma omp parallel for private(ik_irred, ik, is, omega, x), reduction(+:ret)
         for (i = 0; i < N; ++i) {
-            ik = i / ns;
+            ik_irred = i / ns;
+            ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
             is = i % ns;
             omega = dynamical->eval_phonon[ik][is];
 
             if (omega < eps8) continue;
 
-            x = omega / (T * T_to_Ryd);
-            ret += std::log(x);
-        }
-
-        return T * T_to_Ryd * ret / static_cast<double>(nk);
-
-    } else {
-#pragma omp parallel for private(ik, is, omega, x), reduction(+:ret)
-        for (i = 0; i < N; ++i) {
-            ik = i / ns;
-            is = i % ns;
-            omega = dynamical->eval_phonon[ik][is];
-
-            if (omega < eps8) continue;
-
-            if (std::abs(T) < eps) {
-                ret += 0.5 * omega;
-            } else {
+            if (std::abs(T) > eps) {
                 x = omega / (T * T_to_Ryd);
-                ret += 0.5 * x + std::log(1.0 - std::exp(-x));
+                ret += std::log(x) * kpoint->weight_k[ik_irred];
             }
         }
 
-        if (std::abs(T) < eps) return ret / static_cast<double>(nk);
+        return T * T_to_Ryd * ret;
 
-        return T * T_to_Ryd * ret / static_cast<double>(nk);
     }
+#pragma omp parallel for private(ik_irred, ik, is, omega, x), reduction(+:ret)
+    for (i = 0; i < N; ++i) {
+        ik_irred = i / ns;
+        ik = kpoint->kpoint_irred_all[ik_irred][0].knum;
+        is = i % ns;
+        omega = dynamical->eval_phonon[ik][is];
+
+        if (omega < eps8) continue;
+
+        if (std::abs(T) < eps) {
+            ret += 0.5 * omega * kpoint->weight_k[ik_irred];
+        } else {
+            x = omega / (T * T_to_Ryd);
+            ret += (0.5 * x + std::log(1.0 - std::exp(-x))) * kpoint->weight_k[ik_irred];
+        }
+    }
+
+    if (std::abs(T) < eps) return ret;
+
+    return T * T_to_Ryd * ret;
 }
 
 double Thermodynamics::disp2_avg(const double T,

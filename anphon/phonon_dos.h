@@ -17,7 +17,7 @@
 
 namespace PHON_NS
 {
-    class Dos: protected Pointers
+    class Dos : protected Pointers
     {
     public:
         Dos(class PHON *);
@@ -27,6 +27,7 @@ namespace PHON_NS
         void calc_dos_all();
 
         bool flag_dos;
+        bool compute_dos;
         bool projected_dos, two_phonon_dos;
         int scattering_phase_space;
 
@@ -43,35 +44,38 @@ namespace PHON_NS
         void calc_dos_scph(double ***, double **);
 
     private:
+        void set_default_variables();
+        void deallocate_variables();
+
         unsigned int nk_irreducible;
         int *kmap_irreducible;
         std::vector<int> k_irreducible;
 
-        void calc_dos(const unsigned int, int *,
-                      double **, const unsigned int, double *,
-                      double *, const unsigned int, const int,
+        void calc_dos(unsigned int, int *,
+                      double **, unsigned int, double *,
+                      double *, unsigned int, int,
                       std::vector<std::vector<KpointList>> &);
 
-        void calc_atom_projected_dos(const unsigned int, double **,
-                                     const unsigned int, double *, double **,
-                                     const unsigned int, const unsigned int, const int,
+        void calc_atom_projected_dos(unsigned int, double **,
+                                     unsigned int, double *, double **,
+                                     unsigned int, unsigned int, int,
                                      std::complex<double> ***);
 
-        void calc_two_phonon_dos(const unsigned int, double *, double ***, const int,
-                                 std::vector<std::vector<KpointList>>);
+        void calc_two_phonon_dos(unsigned int, double *, double ***, int,
+                                 const std::vector<std::vector<KpointList>> &);
 
-        void calc_total_scattering_phase_space(double **, const int,
-                                               std::vector<std::vector<KpointList>>,
+        void calc_total_scattering_phase_space(double **, int,
+                                               const std::vector<std::vector<KpointList>> &,
                                                double ***, double &);
 
-        void calc_scattering_phase_space_with_Bose(double **, const int,
-                                                   std::vector<std::vector<KpointList>>,
+        void calc_scattering_phase_space_with_Bose(double **, int,
+                                                   const std::vector<std::vector<KpointList>> &,
                                                    double ****);
 
-        void calc_scattering_phase_space_with_Bose_mode(const unsigned int,
-                                                        const unsigned int,
-                                                        const unsigned int,
-                                                        const double, double **, double *,
-                                                        unsigned int *, const int, double **);
+        void calc_scattering_phase_space_with_Bose_mode(unsigned int,
+                                                        unsigned int,
+                                                        unsigned int,
+                                                        double, double **, double *,
+                                                        unsigned int *, int, double **);
     };
 }

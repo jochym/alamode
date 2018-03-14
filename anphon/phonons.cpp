@@ -209,13 +209,6 @@ void PHON::execute_phonons()
             gruneisen->write_new_fcsxml_all();
         }
     }
-
-    dynamical->finish_dynamical();
-    gruneisen->finish_gruneisen();
-
-    if (dos->flag_dos) {
-        integration->finish_integration();
-    }
 }
 
 void PHON::execute_RTA()
@@ -265,17 +258,6 @@ void PHON::execute_RTA()
         writes->write_kappa();
         writes->write_selfenergy_isotope();
     }
-
-    if (kpoint->kpoint_mode == 2) {
-        integration->finish_integration();
-    }
-
-    dynamical->finish_dynamical();
-    relaxation->finish_relaxation();
-
-    if (!relaxation->ks_analyze_mode) {
-        conductivity->finish_kappa();
-    }
 }
 
 void PHON::execute_self_consistent_phonon()
@@ -300,12 +282,4 @@ void PHON::execute_self_consistent_phonon()
 
     scph->setup_scph();
     scph->exec_scph();
-
-    if (kpoint->kpoint_mode == 2) {
-        integration->finish_integration();
-    }
-
-    dynamical->finish_dynamical();
-
-    scph->finish_scph();
 }

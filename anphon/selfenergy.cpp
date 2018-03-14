@@ -972,10 +972,12 @@ void Selfenergy::selfenergy_f(const unsigned int N,
                                                             += v3_prod * static_cast<double>(ip2 * ip3 * ip4)
                                                             * (omega_sum[1]
                                                                 * (n2 * omega_sum[0]
-                                                                    * ((1.0 + n3 + n4) * omega_sum[0] + (1.0 + n2 + n4) * dp1_inv)
+                                                                    * ((1.0 + n3 + n4) * omega_sum[0] + (1.0 + n2 + n4)
+                                                                        * dp1_inv)
                                                                     + (1.0 + n3) * (1.0 + n4) * D134 * (D134 + dp1_inv))
                                                                 + (1.0 + n1) * (1.0 + n3 + n4) * D134
-                                                                * omega_sum[0] * (omega_sum[0] + D134 + dp1_inv + n1 * T_inv));
+                                                                * omega_sum[0] * (omega_sum[0] + D134 + dp1_inv + n1 *
+                                                                    T_inv));
                                                     }
                                                 }
                                             }
@@ -1018,7 +1020,8 @@ void Selfenergy::selfenergy_f(const unsigned int N,
                                                             n5 = thermodynamics->fB(dp5, T_tmp);
 
                                                             ret_mpi[i]
-                                                                += v3_prod * static_cast<double>(ip1 * ip2 * ip3 * ip4 * ip5)
+                                                                += v3_prod * static_cast<double>(ip1 * ip2 * ip3 * ip4 *
+                                                                    ip5)
                                                                 * ((1.0 + n3 + n4)
                                                                     * (-(1.0 + n1 + n2) * D15 * D134 * omega_sum[0]
                                                                         + (1.0 + n5 + n2) * D15 * D345 * omega_sum[1])
@@ -1179,8 +1182,10 @@ void Selfenergy::selfenergy_g(const unsigned int N,
 
                                                 ret_mpi[i]
                                                     += v_prod * static_cast<double>(ip1 * ip2 * ip3 * ip4) * D124
-                                                    * ((1.0 + n1 + n2 + n3 + n4 + n1 * n3 + n1 * n4 + n2 * n3 + n2 * n4) * omega_sum[0]
-                                                        - (1.0 + n1 + n2 + n3 + n1 * n2 + n2 * n3 + n1 * n3) * omega_sum[1]);
+                                                    * ((1.0 + n1 + n2 + n3 + n4 + n1 * n3 + n1 * n4 + n2 * n3 + n2 * n4)
+                                                        * omega_sum[0]
+                                                        - (1.0 + n1 + n2 + n3 + n1 * n2 + n2 * n3 + n1 * n3) * omega_sum
+                                                        [1]);
 
                                             }
                                         }
@@ -1368,7 +1373,8 @@ void Selfenergy::selfenergy_h(const unsigned int N,
                                                         N35 = n3 - n5;
 
                                                         N_prod[0] = N12 * (1.0 + n3);
-                                                        N_prod[1] = (1.0 + n2 + n3) * (1.0 + n5) - (1.0 + n1 + n3) * (1.0 + n4);
+                                                        N_prod[1] = (1.0 + n2 + n3) * (1.0 + n5) - (1.0 + n1 + n3) * (
+                                                            1.0 + n4);
                                                         N_prod[2] = ((1.0 + n2) * N35 - n3 * (1.0 + n5));
                                                         N_prod[3] = -((1.0 + n1) * N34 - n3 * (1.0 + n4));
 
@@ -1533,7 +1539,8 @@ void Selfenergy::selfenergy_i(const unsigned int N,
 
                                                 ret_mpi[i]
                                                     += v_prod * static_cast<double>(ip1 * ip3)
-                                                    * (D123 * (N_prod[0] * D123 + N_prod[1] * T_inv + N_prod[0] * dp2_inv));
+                                                    * (D123 * (N_prod[0] * D123 + N_prod[1] * T_inv + N_prod[0] *
+                                                        dp2_inv));
                                             }
                                         }
                                     }

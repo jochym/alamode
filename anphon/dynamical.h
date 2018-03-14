@@ -26,11 +26,7 @@ namespace PHON_NS
 
         DistWithCell();
 
-        DistWithCell(const int n, const double d)
-        {
-            cell = n;
-            dist = d;
-        }
+        DistWithCell(const int n, const double d) : cell(n), dist(d) {};
     };
 
     inline bool operator<(const DistWithCell a,
@@ -39,18 +35,16 @@ namespace PHON_NS
         return a.dist < b.dist;
     }
 
-    class Dynamical: protected Pointers
+    class Dynamical : protected Pointers
     {
     public:
         Dynamical(class PHON *);
         ~Dynamical();
 
-        void diagonalize_dynamical_all();
-        void finish_dynamical();
-
         unsigned int neval;
         bool eigenvectors;
         bool print_eigenvectors;
+        unsigned int symmetrize_borncharge;
         unsigned int nonanalytic;
         bool participation_ratio;
         unsigned int band_connection;
@@ -64,6 +58,8 @@ namespace PHON_NS
         double dielec[3][3];
         double ***borncharge;
 
+        void diagonalize_dynamical_all();
+
         void setup_dynamical(std::string);
 
         void eval_k(double *, double *,
@@ -76,7 +72,7 @@ namespace PHON_NS
                           const int);
 
 
-        double fold(double);
+        double fold(const double);
         double freq(const double);
 
         void calc_participation_ratio_all(std::complex<double> ***,
@@ -84,12 +80,11 @@ namespace PHON_NS
                                           double ***);
 
         void calc_analytic_k(double *,
-                             std::vector<FcsClassExtent>,
+                             const std::vector<FcsClassExtent> &,
                              std::complex<double> **);
         void calc_nonanalytic_k(double *, double *,
                                 std::complex<double> **);
         void calc_nonanalytic_k2(double *, double *,
-                                 std::vector<FcsClassExtent>,
                                  std::complex<double> **);
 
         void calc_analytic_k_ewald(double *,
@@ -97,16 +92,14 @@ namespace PHON_NS
                                    std::complex<double> **);
 
     private:
-
-        void load_born();
+        void set_default_variables();
+        void deallocate_variables();
+        void load_born(const unsigned int);
 
         void prepare_mindist_list(std::vector<int> **);
         void calc_atomic_participation_ratio(std::complex<double> *, double *);
         double distance(double *, double *);
         void connect_band_by_eigen_similarity(std::complex<double> ***, int **);
-
-        // void calc_analytic_k(double *, double ****, std::complex<double> **);
-        // void modify_eigenvectors_sym();
 
         double **xshift_s;
         char UPLO;
@@ -114,12 +107,11 @@ namespace PHON_NS
         std::vector<int> **mindist_list;
     };
 
-    extern "C"
-    {
-        void zheev_(const char *jobz, const char *uplo, int *n, std::complex<double> *a, int *lda,
-                    double *w, std::complex<double> *work, int *lwork, double *rwork, int *info);
-        void zgemm_(const char *transa, const char *transb, int *m, int *n, int *k,
-                    std::complex<double> *alpha, std::complex<double> *a, int *lda, std::complex<double> *b, int *ldb,
-                    std::complex<double> *beta, std::complex<double> *c, int *ldc);
+    extern "C" {
+    void zheev_(const char *jobz, const char *uplo, int *n, std::complex<double> *a, int *lda,
+                double *w, std::complex<double> *work, int *lwork, double *rwork, int *info);
+    void zgemm_(const char *transa, const char *transb, int *m, int *n, int *k,
+                std::complex<double> *alpha, std::complex<double> *a, int *lda, std::complex<double> *b, int *ldb,
+                std::complex<double> *beta, std::complex<double> *c, int *ldc);
     }
 }

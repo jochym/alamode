@@ -17,7 +17,7 @@
 
 namespace PHON_NS
 {
-    class Writes: protected Pointers
+    class Writes : protected Pointers
     {
     public:
 
