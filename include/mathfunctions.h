@@ -14,7 +14,7 @@
 #include <cstdlib>
 
 template <typename T>
-inline void matmul3(T ret[3][3], T amat[3][3], T bmat[3][3]) {
+inline void matmul3(T ret[3][3], const T amat[3][3], const T bmat[3][3]) {
 	int i, j, k;
 
 	T ret_tmp[3][3];
@@ -100,7 +100,7 @@ inline void rotvec(double vec_out[3], double vec_in[3], double **mat, char mode 
 	}
 }
 
-inline void invmat3(double invmat[3][3], double mat[3][3])
+inline void invmat3(double invmat[3][3], const double mat[3][3])
 {
 	unsigned int i, j;
 	double det;

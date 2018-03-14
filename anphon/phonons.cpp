@@ -32,6 +32,8 @@
 #include "isotope.h"
 #include "selfenergy.h"
 #include "version.h"
+#include "scph.h"
+#include "ewald.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -79,10 +81,12 @@ PHON::PHON(int narg, char **arg, MPI_Comm comm)
 
         execute_RTA();
 
+    } else if (mode == "SCPH") {
+
+        execute_self_consistent_phonon();
+
     } else {
-
-        error->exit("phonons", "invalid mode");
-
+        error->exit("phonons", "invalid mode: ", mode.c_str());
     }
 
     if (mympi->my_rank == 0) {
@@ -118,6 +122,8 @@ void PHON::create_pointers()
     dos = new Dos(this);
     gruneisen = new Gruneisen(this);
     isotope = new Isotope(this);
+    scph = new Scph(this);
+    ewald = new Ewald(this);
 }
 
 void PHON::destroy_pointers()
@@ -140,6 +146,8 @@ void PHON::destroy_pointers()
     delete dos;
     delete gruneisen;
     delete isotope;
+    delete scph;
+    delete ewald;
 }
 
 void PHON::setup_base()
@@ -150,8 +158,16 @@ void PHON::setup_base()
     fcs_phonon->setup(mode);
     dynamical->setup_dynamical(mode);
     dos->setup();
+    thermodynamics->setup();
+    ewald->init();
     if (mympi->my_rank == 0) {
         std::cout << " Now, move on to phonon calculations." << std::endl;
+        if (thermodynamics->classical) {
+            std::cout << std::endl;
+            std::cout << " CLASSICAL = 1: Classical approximations will be used" << std::endl;
+            std::cout << "                for all thermodynamic functions." << std::endl;
+            std::cout << std::endl;
+        }
     }
 }
 
@@ -192,13 +208,6 @@ void PHON::execute_phonons()
         if (gruneisen->print_newfcs) {
             gruneisen->write_new_fcsxml_all();
         }
-    }
-
-    dynamical->finish_dynamical();
-    gruneisen->finish_gruneisen();
-
-    if (dos->flag_dos) {
-        integration->finish_integration();
     }
 }
 
@@ -249,16 +258,28 @@ void PHON::execute_RTA()
         writes->write_kappa();
         writes->write_selfenergy_isotope();
     }
-
-    if (kpoint->kpoint_mode == 2) {
-        integration->finish_integration();
-    }
-
-    dynamical->finish_dynamical();
-    relaxation->finish_relaxation();
-
-    if (!relaxation->ks_analyze_mode) {
-        conductivity->finish_kappa();
-    }
 }
 
+void PHON::execute_self_consistent_phonon()
+{
+    if (mympi->my_rank == 0) {
+        std::cout << "                        MODE = SCPH                           " << std::endl;
+        std::cout << "                                                             " << std::endl;
+        std::cout << "      Self-consistent phonon calculation to estimate         " << std::endl;
+        std::cout << "      anharmonic phonon frequencies.                         " << std::endl;
+        std::cout << "      Harmonic and quartic force constants will be used.  " << std::endl;
+        std::cout << std::endl;
+    }
+
+    setup_base();
+    dos->setup();
+
+    dynamical->diagonalize_dynamical_all();
+
+    if (kpoint->kpoint_mode == 2) {
+        integration->setup_integration();
+    }
+
+    scph->setup_scph();
+    scph->exec_scph();
+}

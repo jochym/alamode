@@ -10,26 +10,44 @@
 
 #include "mpi_common.h"
 #include "isotope.h"
+#include "constants.h"
+#include "dynamical.h"
+#include "error.h"
+#include "integration.h"
+#include "kpoint.h"
 #include "memory.h"
 #include "system.h"
-#include "dynamical.h"
 #include <iomanip>
-#include "kpoint.h"
 #include <complex>
-#include "constants.h"
-#include "integration.h"
 
 using namespace PHON_NS;
 
-Isotope::Isotope(PHON *phon): Pointers(phon) {};
+Isotope::Isotope(PHON *phon): Pointers(phon)
+{
+    set_default_variables();
+};
 
 Isotope::~Isotope()
 {
-    if (phon->mode == "RTA" && include_isotope) {
+    deallocate_variables();
+};
+
+void Isotope::set_default_variables()
+{
+    include_isotope = false;
+    isotope_factor = nullptr;
+    gamma_isotope = nullptr;
+}
+
+void Isotope::deallocate_variables()
+{
+    if (isotope_factor) {
         memory->deallocate(isotope_factor);
+    }
+    if (gamma_isotope) {
         memory->deallocate(gamma_isotope);
     }
-};
+}
 
 
 void Isotope::setup_isotope_scattering()
@@ -40,6 +58,15 @@ void Isotope::setup_isotope_scattering()
     MPI_Bcast(&include_isotope, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     if (include_isotope) {
+
+        if (mympi->my_rank == 0) {
+            if (!isotope_factor) {
+                memory->allocate(isotope_factor, nkd);
+                set_isotope_factor_from_database(nkd,
+                                                 system->symbol_kd,
+                                                 isotope_factor);
+            }
+        }
 
         if (mympi->my_rank > 0) {
             memory->allocate(isotope_factor, nkd);
@@ -58,7 +85,7 @@ void Isotope::setup_isotope_scattering()
             std::cout << std::endl;
         }
 
-        memory->allocate(gamma_isotope, kpoint->nk_reduced, dynamical->neval);
+        memory->allocate(gamma_isotope, kpoint->nk_irred, dynamical->neval);
     }
 }
 
@@ -175,7 +202,7 @@ void Isotope::calc_isotope_selfenergy_all()
     int i, j;
     int nk = kpoint->nk;
     int ns = dynamical->neval;
-    int nks = kpoint->nk_reduced * ns;
+    int nks = kpoint->nk_irred * ns;
     int knum, snum;
     double tmp, omega;
     double *gamma_tmp, *gamma_loc;
@@ -206,7 +233,7 @@ void Isotope::calc_isotope_selfenergy_all()
         MPI_Reduce(&gamma_loc[0], &gamma_tmp[0], nks,
                    MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-        for (i = 0; i < kpoint->nk_reduced; ++i) {
+        for (i = 0; i < kpoint->nk_irred; ++i) {
             for (j = 0; j < ns; ++j) {
                 gamma_isotope[i][j] = gamma_tmp[ns * i + j];
             }
@@ -218,5 +245,27 @@ void Isotope::calc_isotope_selfenergy_all()
         if (mympi->my_rank == 0) {
             std::cout << "done!" << std::endl;
         }
+    }
+}
+
+void Isotope::set_isotope_factor_from_database(const int nkd,
+                                               const std::string *symbol_in,
+                                               double *isofact_out)
+{
+    double isofact_tmp;
+    int atom_number;
+
+    for (int i = 0; i < nkd; ++i) {
+        atom_number = system->get_atomic_number_by_name(symbol_in[i]);
+        if (atom_number >= isotope_factors.size() || (atom_number == -1)) {
+            error->exit("set_isotope_factor_from_database",
+                        "The isotope factor for the given element doesn't exist in the database.\nTherefore, please input ISOFACT manually.");
+        }
+        isofact_tmp = isotope_factors[atom_number];
+        if (isofact_tmp < -0.5) {
+            error->exit("set_isotope_factor_from_database",
+                        "One of the elements in the KD-tag is unstable. \nTherefore, please input ISOFACT manually.");
+        }
+        isofact_out[i] = isofact_tmp;
     }
 }

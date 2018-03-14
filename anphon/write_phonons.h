@@ -17,7 +17,7 @@
 
 namespace PHON_NS
 {
-    class Writes: protected Pointers
+    class Writes : protected Pointers
     {
     public:
 
@@ -64,4 +64,3 @@ namespace PHON_NS
         double Ry_to_kayser;
     };
 }
-

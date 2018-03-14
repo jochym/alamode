@@ -9,42 +9,74 @@
 */
 
 #include "mpi_common.h"
-#include <iostream>
-#include <fstream>
-#include <iomanip>
 #include "conductivity.h"
+#include "constants.h"
 #include "dynamical.h"
 #include "error.h"
 #include "integration.h"
+#include "isotope.h"
 #include "kpoint.h"
+#include "mathfunctions.h"
 #include "memory.h"
 #include "parsephon.h"
+#include "phonon_dos.h"
 #include "thermodynamics.h"
 #include "phonon_velocity.h"
 #include "relaxation.h"
 #include "system.h"
 #include "write_phonons.h"
-#include "constants.h"
+#include <iostream>
+#include <fstream>
+#include <iomanip>
 #include <set>
 #include <vector>
-#include "mathfunctions.h"
-#include "isotope.h"
-#include "phonon_dos.h"
 
 using namespace PHON_NS;
 
 Conductivity::Conductivity(PHON *phon): Pointers(phon)
 {
+    set_default_variables();
 }
 
 Conductivity::~Conductivity()
 {
+    deallocate_variables();
 };
+
+void Conductivity::set_default_variables()
+{
+    calc_kappa_spec = 0;
+    ntemp = 0;
+    damping3 = nullptr;
+    kappa = nullptr;
+    kappa_spec = nullptr;
+    Temperature = nullptr;
+    vel = nullptr;
+}
+
+void Conductivity::deallocate_variables()
+{
+    if (damping3) {
+        memory->deallocate(damping3);
+    }
+    if (kappa) {
+        memory->deallocate(kappa);
+    }
+    if (kappa_spec) {
+        memory->deallocate(kappa_spec);
+    }
+    if (Temperature) {
+        memory->deallocate(Temperature);
+    }
+    if (vel) {
+        memory->deallocate(vel);
+    }
+}
+
 
 void Conductivity::setup_kappa()
 {
     unsigned int i, j, k;
-    unsigned int nks_total, nks_each_thread, nrem;
 
     nk = kpoint->nk;
     ns = dynamical->neval;
@@ -56,9 +88,9 @@ void Conductivity::setup_kappa()
         Temperature[i] = system->Tmin + static_cast<double>(i) * system->dT;
     }
 
-    nks_total = kpoint->nk_reduced * ns;
-    nks_each_thread = nks_total / mympi->nprocs;
-    nrem = nks_total - nks_each_thread * mympi->nprocs;
+    unsigned int nks_total = kpoint->nk_irred * ns;
+    unsigned int nks_each_thread = nks_total / mympi->nprocs;
+    unsigned int nrem = nks_total - nks_each_thread * mympi->nprocs;
 
     if (nrem > 0) {
         memory->allocate(damping3, (nks_each_thread + 1) * mympi->nprocs, ntemp);
@@ -83,7 +115,7 @@ void Conductivity::setup_kappa()
 
     vks_job.clear();
 
-    for (i = 0; i < kpoint->nk_reduced; ++i) {
+    for (i = 0; i < kpoint->nk_irred; ++i) {
         for (j = 0; j < ns; ++j) {
             vks_job.insert(i * ns + j);
         }
@@ -115,11 +147,12 @@ void Conductivity::prepare_restart()
             writes->fs_result << "##Phonon Frequency" << std::endl;
             writes->fs_result << "#K-point (irreducible), Branch, Omega (cm^-1)" << std::endl;
 
-            for (i = 0; i < kpoint->nk_reduced; ++i) {
+            for (i = 0; i < kpoint->nk_irred; ++i) {
                 ik = kpoint->kpoint_irred_all[i][0].knum;
                 for (is = 0; is < dynamical->neval; ++is) {
                     writes->fs_result << std::setw(6) << i + 1 << std::setw(6) << is + 1;
-                    writes->fs_result << std::setw(15) << writes->in_kayser(dynamical->eval_phonon[ik][is]) << std::endl;
+                    writes->fs_result << std::setw(15) << writes->in_kayser(dynamical->eval_phonon[ik][is]) << std::
+                        endl;
                 }
             }
 
@@ -189,22 +222,9 @@ void Conductivity::prepare_restart()
     vks_done.clear();
 }
 
-void Conductivity::finish_kappa()
-{
-    if (mympi->my_rank == 0) {
-        memory->deallocate(vel);
-        memory->deallocate(kappa);
-        if (calc_kappa_spec) {
-            memory->deallocate(kappa_spec);
-        }
-    }
-    memory->deallocate(damping3);
-    memory->deallocate(Temperature);
-}
 
 void Conductivity::calc_anharmonic_imagself()
 {
-    unsigned int nks_g;
     unsigned int i, j;
     unsigned int knum, snum;
     unsigned int *nks_thread;
@@ -215,12 +235,12 @@ void Conductivity::calc_anharmonic_imagself()
 
     // Distribute (k,s) to individual MPI threads
 
-    nks_g = vks_job.size();
+    unsigned int nks_g = vks_job.size();
     vks_l.clear();
 
     unsigned int icount = 0;
 
-    for (std::set<int>::iterator it = vks_job.begin(); it != vks_job.end(); ++it) {
+    for (auto it = vks_job.begin(); it != vks_job.end(); ++it) {
         if (icount % mympi->nprocs == mympi->my_rank) {
             vks_l.push_back(*it);
         }
@@ -303,15 +323,15 @@ void Conductivity::write_result_gamma(const unsigned int ik, const unsigned int 
                                       double ***vel_in, double **damp_in)
 {
     unsigned int np = mympi->nprocs;
-    unsigned int j, k, iks_g;
+    unsigned int k, iks_g;
     unsigned int nk_equiv;
     unsigned int ktmp;
 
-    for (j = 0; j < np; ++j) {
+    for (unsigned int j = 0; j < np; ++j) {
 
         iks_g = ik * np + j + nshift;
 
-        if (iks_g >= kpoint->nk_reduced * ns) break;
+        if (iks_g >= kpoint->nk_irred * ns) break;
 
         writes->fs_result << "#GAMMA_EACH" << std::endl;
         writes->fs_result << iks_g / ns + 1 << " " << iks_g % ns + 1 << std::endl;
@@ -351,32 +371,37 @@ void Conductivity::compute_kappa()
         std::string file_kl;
         std::ofstream ofs_kl;
         double vv_tmp;
+        double damp_tmp;
         int ieq;
 
         double **lifetime;
         double ****kappa_mode;
 
-        memory->allocate(lifetime, kpoint->nk_reduced * ns, ntemp);
-        memory->allocate(kappa_mode, ntemp, 9, ns, kpoint->nk_reduced);
+        memory->allocate(lifetime, kpoint->nk_irred * ns, ntemp);
+        memory->allocate(kappa_mode, ntemp, 9, ns, kpoint->nk_irred);
 
-        average_self_energy_at_degenerate_point(kpoint->nk_reduced * ns, ntemp, damping3);
+        average_self_energy_at_degenerate_point(kpoint->nk_irred * ns, ntemp, damping3);
 
         if (isotope->include_isotope) {
-            for (iks = 0; iks < kpoint->nk_reduced * ns; ++iks) {
+            for (iks = 0; iks < kpoint->nk_irred * ns; ++iks) {
                 snum = iks % ns;
                 if (relaxation->is_imaginary[iks / ns][snum]) {
                     for (i = 0; i < ntemp; ++i) {
-                        lifetime[iks][i] = 0.0;;
+                        lifetime[iks][i] = 0.0;
                     }
                 } else {
                     for (i = 0; i < ntemp; ++i) {
-                        lifetime[iks][i] = 1.0e+12 * time_ry * 0.5
-                            / (damping3[iks][i] + isotope->gamma_isotope[iks / ns][snum]);
+                        damp_tmp = damping3[iks][i] + isotope->gamma_isotope[iks / ns][snum];
+                        if (damp_tmp > 1.0e-100) {
+                            lifetime[iks][i] = 1.0e+12 * time_ry * 0.5 / damp_tmp;
+                        } else {
+                            lifetime[iks][i] = 0.0;
+                        }
                     }
                 }
             }
         } else {
-            for (iks = 0; iks < kpoint->nk_reduced * ns; ++iks) {
+            for (iks = 0; iks < kpoint->nk_irred * ns; ++iks) {
 
                 if (relaxation->is_imaginary[iks / ns][iks % ns]) {
                     for (i = 0; i < ntemp; ++i) {
@@ -384,7 +409,12 @@ void Conductivity::compute_kappa()
                     }
                 } else {
                     for (i = 0; i < ntemp; ++i) {
-                        lifetime[iks][i] = 1.0e+12 * time_ry * 0.5 / damping3[iks][i];
+                        damp_tmp = damping3[iks][i];
+                        if (damp_tmp > 1.0e-100) {
+                            lifetime[iks][i] = 1.0e+12 * time_ry * 0.5 / damp_tmp;
+                        } else {
+                            lifetime[iks][i] = 0.0;
+                        }
                     }
                 }
             }
@@ -399,13 +429,13 @@ void Conductivity::compute_kappa()
                     if (Temperature[i] < eps) {
                         // Set kappa as zero when T = 0.
                         for (is = 0; is < ns; ++is) {
-                            for (ik = 0; ik < kpoint->nk_reduced; ++ik) {
+                            for (ik = 0; ik < kpoint->nk_irred; ++ik) {
                                 kappa_mode[i][3 * j + k][is][ik] = 0.0;
                             }
                         }
                     } else {
                         for (is = 0; is < ns; ++is) {
-                            for (ik = 0; ik < kpoint->nk_reduced; ++ik) {
+                            for (ik = 0; ik < kpoint->nk_irred; ++ik) {
                                 knum = kpoint->kpoint_irred_all[ik][0].knum;
                                 omega = dynamical->eval_phonon[knum][is];
                                 vv_tmp = 0.0;
@@ -417,8 +447,15 @@ void Conductivity::compute_kappa()
                                     vv_tmp += vel[ktmp][is][j] * vel[ktmp][is][k];
                                 }
 
-                                kappa_mode[i][3 * j + k][is][ik] = thermodynamics->Cv(omega, Temperature[i])
-                                    * vv_tmp * lifetime[ns * ik + is][i];
+                                if (thermodynamics->classical) {
+                                    kappa_mode[i][3 * j + k][is][ik] = thermodynamics->Cv_classical(
+                                            omega, Temperature[i])
+                                        * vv_tmp * lifetime[ns * ik + is][i];
+                                } else {
+                                    kappa_mode[i][3 * j + k][is][ik] = thermodynamics->Cv(omega, Temperature[i])
+                                        * vv_tmp * lifetime[ns * ik + is][i];
+                                }
+
 
                                 // Convert to SI unit
                                 kappa_mode[i][3 * j + k][is][ik] *= factor_toSI;
@@ -430,7 +467,7 @@ void Conductivity::compute_kappa()
                     kappa[i][j][k] = 0.0;
 
                     for (is = 0; is < ns; ++is) {
-                        for (ik = 0; ik < kpoint->nk_reduced; ++ik) {
+                        for (ik = 0; ik < kpoint->nk_irred; ++ik) {
                             kappa[i][j][k] += kappa_mode[i][3 * j + k][is][ik];
                         }
                     }
@@ -454,7 +491,7 @@ void Conductivity::average_self_energy_at_degenerate_point(const int n,
                                                            double **damping)
 {
     int i, j, k, l;
-    int nkr = kpoint->nk_reduced;
+    int nkr = kpoint->nk_irred;
     int ik;
 
     double *eval_tmp;
@@ -577,7 +614,7 @@ void Conductivity::compute_frequency_resolved_kappa(const int ntemp,
 
                 for (j = 0; j < ntemp; ++j) {
                     for (k = 0; k < 3; ++k) {
-                        for (ik = 0; ik < kpoint->nk_reduced; ++ik) {
+                        for (ik = 0; ik < kpoint->nk_irred; ++ik) {
                             knum = kpoint->kpoint_irred_all[ik][0].knum;
                             kappa_spec[i][j][k] += kappa_mode[j][3 * k + k][is][ik] * weight[knum];
                         }

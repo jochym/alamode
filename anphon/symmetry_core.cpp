@@ -10,29 +10,35 @@
 
 #include "mpi_common.h"
 #include "symmetry_core.h"
-#include "memory.h"
 #include "constants.h"
 #include "error.h"
+#include "mathfunctions.h"
+#include "memory.h"
 #include "system.h"
 #include <iomanip>
 #include <fstream>
 #include <algorithm>
-#include <set>
-#include "mathfunctions.h"
-
-#ifdef _USE_EIGEN
-#include <Eigen/Core>
-#endif
 
 using namespace PHON_NS;
 
 Symmetry::Symmetry(PHON *phon): Pointers(phon)
 {
-    file_sym = "SYMM_INFO_PRIM";
-    time_reversal_sym = false;
+    set_default_variables();
 }
 
 Symmetry::~Symmetry() {}
+
+
+void Symmetry::set_default_variables()
+{
+    file_sym = "SYMM_INFO_PRIM";
+    time_reversal_sym = false;
+    nsym = 0;
+    symmetry_flag = true;
+    printsymmetry = false;
+    tolerance = 1.0e-6;
+}
+
 
 void Symmetry::setup_symmetry()
 {
@@ -43,13 +49,11 @@ void Symmetry::setup_symmetry()
     memory->allocate(xtmp, natmin, 3);
     memory->allocate(kdtmp, natmin);
 
-    unsigned int i, j;
-
-    for (i = 0; i < natmin; ++i) {
+    for (auto i = 0; i < natmin; ++i) {
         rotvec(xtmp[i], system->xr_s[system->map_p2s[i][0]], system->lavec_s);
         rotvec(xtmp[i], xtmp[i], system->rlavec_p);
 
-        for (j = 0; j < 3; ++j) xtmp[i][j] /= 2.0 * pi;
+        for (auto j = 0; j < 3; ++j) xtmp[i][j] /= 2.0 * pi;
 
         kdtmp[i] = system->kd[system->map_p2s[i][0]];
     }
@@ -59,8 +63,12 @@ void Symmetry::setup_symmetry()
     if (mympi->my_rank == 0) {
         std::cout << " Symmetry" << std::endl;
         std::cout << " ========" << std::endl << std::endl;
-        setup_symmetry_operation(natmin, nsym, system->lavec_p,
-                                 system->rlavec_p, xtmp, kdtmp);
+        setup_symmetry_operation(natmin,
+                                 nsym,
+                                 system->lavec_p,
+                                 system->rlavec_p,
+                                 xtmp,
+                                 kdtmp);
     }
 
     MPI_Bcast(&nsym, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
@@ -71,6 +79,8 @@ void Symmetry::setup_symmetry()
             << nsym << std::endl << std::endl;
         gensym_withmap(xtmp, kdtmp);
     }
+    memory->deallocate(xtmp);
+    memory->deallocate(kdtmp);
 }
 
 void Symmetry::setup_symmetry_operation(int N,
@@ -103,7 +113,7 @@ void Symmetry::setup_symmetry_operation(int N,
             ofs_sym.open(file_sym.c_str(), std::ios::out);
             ofs_sym << nsym << std::endl;
 
-            for (std::vector<SymmetryOperation>::iterator p = SymmList.begin(); p != SymmList.end(); ++p) {
+            for (auto p = SymmList.begin(); p != SymmList.end(); ++p) {
                 for (i = 0; i < 3; ++i) {
                     for (j = 0; j < 3; ++j) {
                         ofs_sym << std::setw(4) << (*p).rot[i][j];
@@ -140,7 +150,7 @@ void Symmetry::setup_symmetry_operation(int N,
             tran_tmp[i] = 0.0;
         }
 
-        SymmList.push_back(SymmetryOperation(rot_tmp, tran_tmp));
+        SymmList.emplace_back(rot_tmp, tran_tmp);
 
     } else {
 
@@ -236,7 +246,7 @@ void Symmetry::find_lattice_symmetry(double aa[3][3],
     }
 
     // Identity matrix should be the first entry.
-    LatticeSymmList.push_back(mat_tmp);
+    LatticeSymmList.emplace_back(mat_tmp);
 
     for (m11 = -1; m11 <= 1; ++m11) {
         for (m12 = -1; m12 <= 1; ++m12) {
@@ -297,7 +307,7 @@ void Symmetry::find_lattice_symmetry(double aa[3][3],
                                                     mat_tmp[i][j] = static_cast<int>(rot_tmp[i][j]);
                                                 }
                                             }
-                                            LatticeSymmList.push_back(mat_tmp);
+                                            LatticeSymmList.emplace_back(mat_tmp);
                                         }
 
                                     }
@@ -319,7 +329,7 @@ void Symmetry::find_crystal_symmetry(int N,
                                      int nclass,
                                      std::vector<unsigned int> *atomclass,
                                      double **x,
-                                     std::vector<RotationMatrix> LatticeSymmList,
+                                     const std::vector<RotationMatrix> &LatticeSymmList,
                                      std::vector<SymmetryOperation> &CrystalSymmList)
 {
     unsigned int i, j;
@@ -340,7 +350,6 @@ void Symmetry::find_crystal_symmetry(int N,
     bool is_found;
     bool isok;
     bool mag_sym1, mag_sym2;
-
     bool is_identity_matrix;
 
 
@@ -356,16 +365,15 @@ void Symmetry::find_crystal_symmetry(int N,
         tran[i] = 0.0;
     }
 
-    CrystalSymmList.push_back(SymmetryOperation(rot_int, tran));
+    CrystalSymmList.emplace_back(rot_int, tran);
 
-
-    for (std::vector<RotationMatrix>::iterator it_latsym = LatticeSymmList.begin(); it_latsym != LatticeSymmList.end(); ++it_latsym) {
+    for (const auto &it_latsym : LatticeSymmList) {
 
         iat = atomclass[0][0];
 
         for (i = 0; i < 3; ++i) {
             for (j = 0; j < 3; ++j) {
-                rot[i][j] = static_cast<double>((*it_latsym).mat[i][j]);
+                rot[i][j] = static_cast<double>(it_latsym.mat[i][j]);
             }
         }
 
@@ -386,10 +394,10 @@ void Symmetry::find_crystal_symmetry(int N,
             isok = true;
 
             is_identity_matrix =
-                (std::pow(rot[0][0] - 1.0, 2) + std::pow(rot[0][1], 2) + std::pow(rot[0][2], 2)
-                    + std::pow(rot[1][0], 2) + std::pow(rot[1][1] - 1.0, 2) + std::pow(rot[1][2], 2)
-                    + std::pow(rot[2][0], 2) + std::pow(rot[2][1], 2) + std::pow(rot[2][2] - 1.0, 2)
-                    + std::pow(tran[0], 2) + std::pow(tran[1], 2) + std::pow(tran[2], 2)) < eps12;
+            (std::pow(rot[0][0] - 1.0, 2) + std::pow(rot[0][1], 2) + std::pow(rot[0][2], 2)
+                + std::pow(rot[1][0], 2) + std::pow(rot[1][1] - 1.0, 2) + std::pow(rot[1][2], 2)
+                + std::pow(rot[2][0], 2) + std::pow(rot[2][1], 2) + std::pow(rot[2][2] - 1.0, 2)
+                + std::pow(tran[0], 2) + std::pow(tran[1], 2) + std::pow(tran[2], 2)) < eps12;
 
             if (is_identity_matrix) continue;
 
@@ -471,7 +479,7 @@ void Symmetry::find_crystal_symmetry(int N,
 #ifdef _OPENMP
 #pragma omp critical
 #endif
-                CrystalSymmList.push_back(SymmetryOperation((*it_latsym).mat, tran));
+                CrystalSymmList.emplace_back(it_latsym.mat, tran);
             }
         }
 
@@ -480,7 +488,7 @@ void Symmetry::find_crystal_symmetry(int N,
 
 
 void Symmetry::gensym_withmap(double **x,
-                              unsigned int *kd)
+                              const unsigned int *kd)
 {
     // Generate symmetry operations in Cartesian coordinate with the atom-mapping information.
 
@@ -496,16 +504,16 @@ void Symmetry::gensym_withmap(double **x,
 
     memory->allocate(map_tmp, natmin);
 
-    for (std::vector<SymmetryOperation>::iterator isym = SymmList.begin(); isym != SymmList.end(); ++isym) {
+    for (const auto &isym : SymmList) {
 
         for (i = 0; i < 3; ++i) {
             for (j = 0; j < 3; ++j) {
-                T[i][j] = static_cast<double>((*isym).rot[i][j]);
+                T[i][j] = static_cast<double>(isym.rot[i][j]);
             }
         }
 
         for (i = 0; i < 3; ++i) {
-            shift[i] = (*isym).tran[i];
+            shift[i] = isym.tran[i];
         }
 
         invmat3(mat_tmp, T);
@@ -560,8 +568,12 @@ void Symmetry::gensym_withmap(double **x,
 
         // Add to vector
 
-        SymmListWithMap.push_back(SymmetryOperationWithMapping(S, T, S_recip,
-                                                               map_tmp, natmin, shift));
+        SymmListWithMap.emplace_back(S,
+                                     T,
+                                     S_recip,
+                                     map_tmp,
+                                     natmin,
+                                     shift);
     }
 }
 
@@ -601,7 +613,7 @@ void Symmetry::broadcast_symmlist(std::vector<SymmetryOperation> &sym)
                 }
                 tran[j] = tran_tmp[i][j];
             }
-            sym.push_back(SymmetryOperation(rot, tran));
+            sym.emplace_back(rot, tran);
         }
     }
 

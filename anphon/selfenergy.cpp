@@ -26,7 +26,9 @@ Selfenergy::Selfenergy(PHON *phon): Pointers(phon)
     im = std::complex<double>(0.0, 1.0);
 }
 
-Selfenergy::~Selfenergy() {}
+Selfenergy::~Selfenergy()
+{
+}
 
 void Selfenergy::setup_selfenergy()
 {
@@ -119,9 +121,13 @@ void Selfenergy::selfenergy_tadpole(const unsigned int N,
 
                 for (i = 0; i < N; ++i) {
                     T_tmp = T[i];
-                    n2 = thermodynamics->fB(omega2, T_tmp);
-                    //   ret[i] += v3_tmp1 * v3_tmp2 * (2.0*n2 + 1.0) / omega1; 
-                    ret_mpi[i] += v3_tmp2 * (2.0 * n2 + 1.0);
+                    if (thermodynamics->classical) {
+                        n2 = thermodynamics->fC(omega2, T_tmp);
+                        ret_mpi[i] += v3_tmp2 * 2.0 * n2;
+                    } else {
+                        n2 = thermodynamics->fB(omega2, T_tmp);
+                        ret_mpi[i] += v3_tmp2 * (2.0 * n2 + 1.0);
+                    }
                 }
             }
         }
@@ -172,6 +178,7 @@ void Selfenergy::selfenergy_a(const unsigned int N,
 
     double T_tmp;
     double n1, n2;
+    double f1, f2;
     double omega1, omega2;
     double factor;
 
@@ -212,10 +219,18 @@ void Selfenergy::selfenergy_a(const unsigned int N,
 
                 for (i = 0; i < N; ++i) {
                     T_tmp = T[i];
-                    n1 = thermodynamics->fB(omega1, T_tmp);
-                    n2 = thermodynamics->fB(omega2, T_tmp);
-
-                    ret_mpi[i] += v3_tmp * ((1.0 + n1 + n2) * omega_sum[0] + (n2 - n1) * omega_sum[1]);
+                    if (thermodynamics->classical) {
+                        n1 = thermodynamics->fC(omega1, T_tmp);
+                        n2 = thermodynamics->fC(omega2, T_tmp);
+                        f1 = n1 + n2;
+                        f2 = n2 - n1;
+                    } else {
+                        n1 = thermodynamics->fB(omega1, T_tmp);
+                        n2 = thermodynamics->fB(omega2, T_tmp);
+                        f1 = n1 + n2 + 1.0;
+                        f2 = n2 - n1;
+                    }
+                    ret_mpi[i] += v3_tmp * (f1 * omega_sum[0] + f2 * omega_sum[1]);
                 }
             }
         }
@@ -274,10 +289,18 @@ void Selfenergy::selfenergy_b(const unsigned int N,
 
             v4_tmp = relaxation->V4(arr_quartic);
 
-            for (i = 0; i < N; ++i) {
-                n1 = thermodynamics->fB(omega1, T[i]);
-                ret_mpi[i] += v4_tmp * (2.0 * n1 + 1.0);
+            if (thermodynamics->classical) {
+                for (i = 0; i < N; ++i) {
+                    n1 = thermodynamics->fC(omega1, T[i]);
+                    ret_mpi[i] += v4_tmp * 2.0 * n1;
+                }
+            } else {
+                for (i = 0; i < N; ++i) {
+                    n1 = thermodynamics->fB(omega1, T[i]);
+                    ret_mpi[i] += v4_tmp * (2.0 * n1 + 1.0);
+                }
             }
+
         }
     }
 
@@ -401,7 +424,7 @@ void Selfenergy::selfenergy_c(const unsigned int N,
         }
     }
 
-    factor = 1.0 / (std::pow(static_cast<double>(nk), 2) * std::pow(2.0, 5) * 3.0);
+    factor = -1.0 / (std::pow(static_cast<double>(nk), 2) * std::pow(2.0, 5) * 3.0);
     for (i = 0; i < N; ++i) ret_mpi[i] *= factor;
 
     mpi_reduce_complex(N, ret_mpi, ret);
@@ -949,10 +972,12 @@ void Selfenergy::selfenergy_f(const unsigned int N,
                                                             += v3_prod * static_cast<double>(ip2 * ip3 * ip4)
                                                             * (omega_sum[1]
                                                                 * (n2 * omega_sum[0]
-                                                                    * ((1.0 + n3 + n4) * omega_sum[0] + (1.0 + n2 + n4) * dp1_inv)
+                                                                    * ((1.0 + n3 + n4) * omega_sum[0] + (1.0 + n2 + n4)
+                                                                        * dp1_inv)
                                                                     + (1.0 + n3) * (1.0 + n4) * D134 * (D134 + dp1_inv))
                                                                 + (1.0 + n1) * (1.0 + n3 + n4) * D134
-                                                                * omega_sum[0] * (omega_sum[0] + D134 + dp1_inv + n1 * T_inv));
+                                                                * omega_sum[0] * (omega_sum[0] + D134 + dp1_inv + n1 *
+                                                                    T_inv));
                                                     }
                                                 }
                                             }
@@ -995,7 +1020,8 @@ void Selfenergy::selfenergy_f(const unsigned int N,
                                                             n5 = thermodynamics->fB(dp5, T_tmp);
 
                                                             ret_mpi[i]
-                                                                += v3_prod * static_cast<double>(ip1 * ip2 * ip3 * ip4 * ip5)
+                                                                += v3_prod * static_cast<double>(ip1 * ip2 * ip3 * ip4 *
+                                                                    ip5)
                                                                 * ((1.0 + n3 + n4)
                                                                     * (-(1.0 + n1 + n2) * D15 * D134 * omega_sum[0]
                                                                         + (1.0 + n5 + n2) * D15 * D345 * omega_sum[1])
@@ -1156,8 +1182,10 @@ void Selfenergy::selfenergy_g(const unsigned int N,
 
                                                 ret_mpi[i]
                                                     += v_prod * static_cast<double>(ip1 * ip2 * ip3 * ip4) * D124
-                                                    * ((1.0 + n1 + n2 + n3 + n4 + n1 * n3 + n1 * n4 + n2 * n3 + n2 * n4) * omega_sum[0]
-                                                        - (1.0 + n1 + n2 + n3 + n1 * n2 + n2 * n3 + n1 * n3) * omega_sum[1]);
+                                                    * ((1.0 + n1 + n2 + n3 + n4 + n1 * n3 + n1 * n4 + n2 * n3 + n2 * n4)
+                                                        * omega_sum[0]
+                                                        - (1.0 + n1 + n2 + n3 + n1 * n2 + n2 * n3 + n1 * n3) * omega_sum
+                                                        [1]);
 
                                             }
                                         }
@@ -1345,7 +1373,8 @@ void Selfenergy::selfenergy_h(const unsigned int N,
                                                         N35 = n3 - n5;
 
                                                         N_prod[0] = N12 * (1.0 + n3);
-                                                        N_prod[1] = (1.0 + n2 + n3) * (1.0 + n5) - (1.0 + n1 + n3) * (1.0 + n4);
+                                                        N_prod[1] = (1.0 + n2 + n3) * (1.0 + n5) - (1.0 + n1 + n3) * (
+                                                            1.0 + n4);
                                                         N_prod[2] = ((1.0 + n2) * N35 - n3 * (1.0 + n5));
                                                         N_prod[3] = -((1.0 + n1) * N34 - n3 * (1.0 + n4));
 
@@ -1510,7 +1539,8 @@ void Selfenergy::selfenergy_i(const unsigned int N,
 
                                                 ret_mpi[i]
                                                     += v_prod * static_cast<double>(ip1 * ip3)
-                                                    * (D123 * (N_prod[0] * D123 + N_prod[1] * T_inv + N_prod[0] * dp2_inv));
+                                                    * (D123 * (N_prod[0] * D123 + N_prod[1] * T_inv + N_prod[0] *
+                                                        dp2_inv));
                                             }
                                         }
                                     }
@@ -1723,4 +1753,3 @@ void Selfenergy::selfenergy_j(const unsigned int N,
 
     memory->deallocate(ret_mpi);
 }
-

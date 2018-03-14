@@ -30,13 +30,7 @@ namespace PHON_NS
 
         FcsClass() {};
 
-        FcsClass(const FcsClass &obj)
-        {
-            fcs_val = obj.fcs_val;
-            for (std::vector<Triplet>::const_iterator it = obj.elems.begin(); it != obj.elems.end(); ++it) {
-                elems.push_back(*it);
-            }
-        }
+        FcsClass(const FcsClass &obj) : elems(obj.elems), fcs_val(obj.fcs_val) {};
 
         FcsClass(const unsigned int n, const double val, const Triplet *arr)
         {
@@ -46,26 +40,21 @@ namespace PHON_NS
             }
         }
 
-        FcsClass(const double val, const std::vector<Triplet> vec)
+        FcsClass(const double val, const std::vector<Triplet> &vec)
+            : elems(vec), fcs_val(val) {};
+
+        bool operator<(const FcsClass &obj) const
         {
-            fcs_val = val;
-            for (std::vector<Triplet>::const_iterator it = vec.begin(); it != vec.end(); ++it) {
-                elems.push_back(*it);
+            std::vector<int> a_tmp, b_tmp;
+            a_tmp.clear();
+            b_tmp.clear();
+            for (int i = 0; i < obj.elems.size(); ++i) {
+                a_tmp.push_back(3 * elems[i].atom + elems[i].xyz);
+                b_tmp.push_back(3 * obj.elems[i].atom + obj.elems[i].xyz);
             }
+            return lexicographical_compare(a_tmp.begin(), a_tmp.end(), b_tmp.begin(), b_tmp.end());
         }
     };
-
-    inline bool operator<(const FcsClass &a, const FcsClass &b)
-    {
-        std::vector<int> a_tmp, b_tmp;
-        a_tmp.clear();
-        b_tmp.clear();
-        for (int i = 0; i < a.elems.size(); ++i) {
-            a_tmp.push_back(3 * a.elems[i].atom + a.elems[i].xyz);
-            b_tmp.push_back(3 * b.elems[i].atom + b.elems[i].xyz);
-        }
-        return lexicographical_compare(a_tmp.begin(), a_tmp.end(), b_tmp.begin(), b_tmp.end());
-    }
 
     class FcsClassExtent
     {
@@ -115,30 +104,29 @@ namespace PHON_NS
 
         FcsArrayWithCell() {};
 
-        FcsArrayWithCell(const double fcs_in, const std::vector<AtomCellSuper> pairs_in)
-        {
-            fcs_val = fcs_in;
+        FcsArrayWithCell(const double fcs_in, const std::vector<AtomCellSuper> &pairs_in)
+            : pairs(pairs_in), fcs_val(fcs_in) {};
 
-            for (std::vector<AtomCellSuper>::const_iterator it = pairs_in.begin(); it != pairs_in.end(); ++it) {
-                pairs.push_back(*it);
+        bool operator<(const FcsArrayWithCell &obj) const
+        {
+            std::vector<unsigned int> index_a, index_b;
+            index_a.clear();
+            index_b.clear();
+            for (int i = 0; i < pairs.size(); ++i) {
+                index_a.push_back(pairs[i].index);
+                index_b.push_back(obj.pairs[i].index);
             }
+            for (int i = 0; i < pairs.size(); ++i) {
+                index_a.push_back(pairs[i].tran);
+                index_a.push_back(pairs[i].cell_s);
+                index_b.push_back(obj.pairs[i].tran);
+                index_b.push_back(obj.pairs[i].cell_s);
+            }
+            return lexicographical_compare(index_a.begin(), index_a.end(), index_b.begin(), index_b.end());
         }
     };
 
-    inline bool operator<(const FcsArrayWithCell &a, const FcsArrayWithCell &b)
-    {
-        std::vector<unsigned int> index_a, index_b;
-        index_a.clear();
-        index_b.clear();
-        for (int i = 0; i < a.pairs.size(); ++i) {
-            index_a.push_back(a.pairs[i].index);
-            index_b.push_back(b.pairs[i].index);
-        }
-        return lexicographical_compare(index_a.begin(), index_a.end(), index_b.begin(), index_b.end());
-    }
-
-
-    class Fcs_phonon: protected Pointers
+    class Fcs_phonon : protected Pointers
     {
     public:
         Fcs_phonon(class PHON *);
@@ -158,18 +146,22 @@ namespace PHON_NS
         bool require_cubic;
         bool require_quartic;
 
+        void set_default_variables();
+        void deallocate_variables();
+
         void load_fc2_xml();
         void load_fcs_xml();
 
-        void examine_translational_invariance(const int, const unsigned int, const unsigned int,
+        void examine_translational_invariance(int,
+                                              unsigned int,
+                                              unsigned int,
                                               double *,
                                               std::vector<FcsClassExtent> &,
                                               std::vector<FcsArrayWithCell> *);
 
 
-        void MPI_Bcast_fc_class(const unsigned int);
-        void MPI_Bcast_fcs_array(const unsigned int);
+        void MPI_Bcast_fc_class(unsigned int);
+        void MPI_Bcast_fcs_array(unsigned int);
         void MPI_Bcast_fc2_ext();
     };
 }
-

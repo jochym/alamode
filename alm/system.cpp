@@ -30,13 +30,36 @@
 
 using namespace ALM_NS;
 
-System::System(ALM *alm): Pointers(alm) {}
+System::System(ALM *alm): Pointers(alm)
+{
+    kdname = nullptr;
+    kd = nullptr;
+    xcoord = nullptr;
+    magmom = nullptr;
+    x_cartesian = nullptr;
+    atomlist_class = nullptr;
+}
 
 System::~System()
 {
-    memory->deallocate(x_cartesian);
-    memory->deallocate(atomlist_class);
-    memory->deallocate(magmom);
+    if (kdname) {
+        memory->deallocate(kdname);
+    }
+    if (kd) {
+        memory->deallocate(kd);
+    }
+    if (xcoord) {
+        memory->deallocate(xcoord);
+    }
+    if (magmom) {
+        memory->deallocate(magmom);
+    }
+    if (x_cartesian) {
+        memory->deallocate(x_cartesian);
+    }
+    if (atomlist_class) {
+        memory->deallocate(atomlist_class);
+    }
 }
 
 void System::init()
@@ -249,7 +272,7 @@ void System::load_reference_system_xml(std::string file_reference_fcs,
         get_value_from_xml(pt, "Data.Symmetry.NumberOfTranslations"));
     natmin_ref = nat_ref / ntran_ref;
 
-    if (natmin_ref != symmetry->natmin) {
+    if (natmin_ref != symmetry->nat_prim) {
         error->exit("load_reference_system_xml",
                     "The number of atoms in the primitive cell is not consistent.");
     }
@@ -258,7 +281,7 @@ void System::load_reference_system_xml(std::string file_reference_fcs,
         nfcs_ref = boost::lexical_cast<int>(
             get_value_from_xml(pt, "Data.ForceConstants.HarmonicUnique.NFC2"));
 
-        if (nfcs_ref != fcs->ndup[0].size()) {
+        if (nfcs_ref != fcs->nequiv[0].size()) {
             error->exit("load_reference_system_xml",
                         "The number of harmonic force constants is not the same.");
         }
@@ -267,7 +290,7 @@ void System::load_reference_system_xml(std::string file_reference_fcs,
         nfcs_ref = boost::lexical_cast<int>(
             get_value_from_xml(pt, "Data.ForceConstants.CubicUnique.NFC3"));
 
-        if (nfcs_ref != fcs->ndup[1].size()) {
+        if (nfcs_ref != fcs->nequiv[1].size()) {
             error->exit("load_reference_system_xml",
                         "The number of cubic force constants is not the same.");
         }
@@ -279,30 +302,30 @@ void System::load_reference_system_xml(std::string file_reference_fcs,
 
     if (order_fcs == 0) {
         BOOST_FOREACH (const ptree::value_type& child_, pt.get_child("Data.ForceConstants.HarmonicUnique")) {
-            if (child_.first == "FC2") {
-                const ptree &child = child_.second;
-                const std::string str_intpair = child.get<std::string>("<xmlattr>.pairs");
-                const std::string str_multiplicity = child.get<std::string>("<xmlattr>.multiplicity");
+                if (child_.first == "FC2") {
+                    const ptree &child = child_.second;
+                    const std::string str_intpair = child.get<std::string>("<xmlattr>.pairs");
+                    const std::string str_multiplicity = child.get<std::string>("<xmlattr>.multiplicity");
 
-                std::istringstream is(str_intpair);
-                is >> intpair_ref[counter][0] >> intpair_ref[counter][1];
-                fcs_ref[counter] = boost::lexical_cast<double>(child.data());
-                ++counter;
+                    std::istringstream is(str_intpair);
+                    is >> intpair_ref[counter][0] >> intpair_ref[counter][1];
+                    fcs_ref[counter] = boost::lexical_cast<double>(child.data());
+                    ++counter;
+                }
             }
-        }
     } else if (order_fcs == 1) {
         BOOST_FOREACH (const ptree::value_type& child_, pt.get_child("Data.ForceConstants.CubicUnique")) {
-            if (child_.first == "FC3") {
-                const ptree &child = child_.second;
-                const std::string str_intpair = child.get<std::string>("<xmlattr>.pairs");
-                const std::string str_multiplicity = child.get<std::string>("<xmlattr>.multiplicity");
+                if (child_.first == "FC3") {
+                    const ptree &child = child_.second;
+                    const std::string str_intpair = child.get<std::string>("<xmlattr>.pairs");
+                    const std::string str_multiplicity = child.get<std::string>("<xmlattr>.multiplicity");
 
-                std::istringstream is(str_intpair);
-                is >> intpair_ref[counter][0] >> intpair_ref[counter][1] >> intpair_ref[counter][2];
-                fcs_ref[counter] = boost::lexical_cast<double>(child.data());
-                ++counter;
+                    std::istringstream is(str_intpair);
+                    is >> intpair_ref[counter][0] >> intpair_ref[counter][1] >> intpair_ref[counter][2];
+                    fcs_ref[counter] = boost::lexical_cast<double>(child.data());
+                    ++counter;
+                }
             }
-        }
     }
 
     int i;
@@ -314,13 +337,13 @@ void System::load_reference_system_xml(std::string file_reference_fcs,
 
     list_found.clear();
 
-    for (std::vector<FcProperty>::iterator p = fcs->fc_set[order_fcs].begin();
-         p != fcs->fc_set[order_fcs].end(); ++p) {
+    for (std::vector<FcProperty>::iterator p = fcs->fc_table[order_fcs].begin();
+         p != fcs->fc_table[order_fcs].end(); ++p) {
         FcProperty list_tmp = *p; // Using copy constructor
         for (i = 0; i < nterms; ++i) {
             ind[i] = list_tmp.elems[i];
         }
-        list_found.insert(FcProperty(nterms, list_tmp.coef,
+        list_found.insert(FcProperty(nterms, list_tmp.sign,
                                      ind, list_tmp.mother));
     }
 
@@ -366,7 +389,7 @@ void System::load_reference_system()
     bool is_found_system = false;
 
     int nparam_harmonic_ref;
-    int nparam_harmonic = fcs->ndup[0].size();
+    int nparam_harmonic = fcs->nequiv[0].size();
 
     std::string str_tmp;
 
@@ -389,7 +412,7 @@ void System::load_reference_system()
 
             ifs_fc2 >> nat_s >> natmin_ref >> ntran_ref;
 
-            if (natmin_ref != symmetry->natmin) {
+            if (natmin_ref != symmetry->nat_prim) {
                 error->exit("load_reference_system",
                             "The number of atoms in the primitive cell is not consistent");
             }
@@ -504,10 +527,10 @@ void System::load_reference_system()
             memory->allocate(ind, 2);
 
             list_found.clear();
-            for (std::vector<FcProperty>::iterator p = fcs->fc_set[0].begin();
-                 p != fcs->fc_set[0].end(); ++p) {
+            for (std::vector<FcProperty>::iterator p = fcs->fc_table[0].begin();
+                 p != fcs->fc_table[0].end(); ++p) {
                 for (i = 0; i < 2; ++i) ind[i] = (*p).elems[i];
-                list_found.insert(FcProperty(2, (*p).coef, ind, (*p).mother));
+                list_found.insert(FcProperty(2, (*p).sign, ind, (*p).mother));
             }
 
             for (i = 0; i < nparam_harmonic; ++i) {

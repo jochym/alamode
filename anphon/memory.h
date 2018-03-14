@@ -17,7 +17,7 @@
 
 namespace PHON_NS
 {
-    class Memory: protected Pointers
+    class Memory : protected Pointers
     {
     public:
         Memory(class PHON *);
@@ -30,7 +30,7 @@ namespace PHON_NS
         {
 #ifdef _SX
             arr = new T [n1];
-#else 
+#else
             try {
                 arr = new T [n1];
             }
@@ -64,7 +64,8 @@ namespace PHON_NS
             catch (std::bad_alloc &ba) {
                 std::cout << " Caught an exception when trying to allocate 2-dimensional array" << std::endl;
                 std::cout << " " << ba.what() << " : Array shape = " << n1 << "x" << n2 << std::endl;
-                std::cout << " " << ba.what() << " : Array size (MB) = " << memsize_in_MB(sizeof(T), n1, n2) << std::endl;
+                std::cout << " " << ba.what() << " : Array size (MB) = " << memsize_in_MB(sizeof(T), n1, n2) << std::
+                    endl;
                 exit(EXIT_FAILURE);
             }
 #endif
@@ -99,7 +100,8 @@ namespace PHON_NS
             catch (std::bad_alloc &ba) {
                 std::cout << " Caught an exception when trying to allocate 3-dimensional array" << std::endl;
                 std::cout << " " << ba.what() << " : Array shape = " << n1 << "x" << n2 << "x" << n3 << std::endl;
-                std::cout << " " << ba.what() << " : Array size (MB) = " << memsize_in_MB(sizeof(T), n1, n2, n3) << std::endl;
+                std::cout << " " << ba.what() << " : Array size (MB) = " << memsize_in_MB(sizeof(T), n1, n2, n3) << std
+                    ::endl;
                 exit(EXIT_FAILURE);
             }
 #endif
@@ -107,7 +109,8 @@ namespace PHON_NS
         }
 
         template <typename T>
-        T**** allocate(T ****&arr, const unsigned int n1, const unsigned int n2, const unsigned int n3, const unsigned int n4)
+        T**** allocate(T ****&arr, const unsigned int n1, const unsigned int n2, const unsigned int n3,
+                       const unsigned int n4)
         {
 #ifdef _SX
             arr = new T ***[n1];
@@ -143,8 +146,10 @@ namespace PHON_NS
             }
             catch (std::bad_alloc &ba) {
                 std::cout << " Caught an exception when trying to allocate 4-dimensional array" << std::endl;
-                std::cout << " " << ba.what() << " : Array shape = " << n1 << "x" << n2 << "x" << n3 << "x" << n4 << std::endl;
-                std::cout << " " << ba.what() << " : Array size (MB) = " << memsize_in_MB(sizeof(T), n1, n2, n3, n4) << std::endl;
+                std::cout << " " << ba.what() << " : Array shape = " << n1 << "x" << n2 << "x" << n3 << "x" << n4 << std
+                    ::endl;
+                std::cout << " " << ba.what() << " : Array size (MB) = " << memsize_in_MB(sizeof(T), n1, n2, n3, n4) <<
+                    std::endl;
                 exit(EXIT_FAILURE);
             }
 #endif
@@ -197,17 +202,18 @@ namespace PHON_NS
             return n / 1000000;
         }
 
-        unsigned long memsize_in_MB(const int size_of_one, const unsigned int n1, const unsigned int n2, const unsigned int n3)
+        unsigned long memsize_in_MB(const int size_of_one, const unsigned int n1, const unsigned int n2,
+                                    const unsigned int n3)
         {
             unsigned long n = n1 * n2 * n3 * size_of_one;
             return n / 1000000;
         }
 
-        unsigned long memsize_in_MB(const int size_of_one, const unsigned int n1, const unsigned int n2, const unsigned int n3, const unsigned int n4)
+        unsigned long memsize_in_MB(const int size_of_one, const unsigned int n1, const unsigned int n2,
+                                    const unsigned int n3, const unsigned int n4)
         {
             unsigned long n = n1 * n2 * n3 * n4 * size_of_one;
             return n / 1000000;
         }
     };
 }
-

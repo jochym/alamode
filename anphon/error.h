@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <string>
 #include "pointers.h"
 
 namespace PHON_NS
@@ -28,4 +27,3 @@ namespace PHON_NS
         void exit(const char *, const char *, const char *);
     };
 }
-

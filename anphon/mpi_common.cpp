@@ -9,7 +9,6 @@
 */
 
 #include "mpi_common.h"
-#include <iostream>
 #include <string>
 #include <cstring>
 
@@ -35,4 +34,3 @@ void MyMPI::MPI_Bcast_string(std::string &str, int root, MPI_Comm comm)
     MPI_Bcast(&ctmp, len + 1, MPI_CHAR, 0, comm);
     str = std::string(ctmp);
 }
-

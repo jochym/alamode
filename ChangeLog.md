@@ -1,3 +1,47 @@
+# Ver. 1.0.2 (2018-1-29)
+
+## New
+
+- Phonon band connection by eigenvector similarity (``BCONNECT`` tag) 
+- New option to turn on/off the symmetrization of Born effective charge (``BORNSYM`` tag).
+
+## Changes
+
+- Improve the performance of the "suggest" mode for hexagonal systems
+- Use \<unorderd_set\> instead of \<set\> for better performance
+
+## Fix
+
+- Fix a bug in the symmetrization of the Born effective charge
+
+
+# Ver. 1.0.1 (2017-11-21)
+
+## Fix
+- Fixed a minor issue in the previous version
+
+
+# Ver. 1.0.0 (2017-11-21)
+
+## New
+
+- Self-consistent phonon calculation (``MODE = SCPH``) 
+- Ewald summation for the non-analytic term of the dynamical matrix (``NONANALYTIC = 3``).
+- Support of the ``CLASSICAL`` option.
+- Python auxiliary script for LAMMPS
+
+## Changes
+
+- P+ and P- are printed seperately in PREFIX.sps when ``SPS = 1``
+- Use C++11 standard. From this version, the C++ compiler must support the C++11 standard.
+- The **anphon** code symmetrize the Born effective charges
+
+## Fix
+
+- Loosen the tolerance to detect the multiplicity of force constants. This is an important fix for low symmetry structures.
+- Fixed a problem of the restart mode of ``MODE = RTA``
+
+
 # Ver. 0.9.8 (2016-7-14)
 
 ## New
