@@ -34,7 +34,8 @@ parser.add_option("--emax", action="store", type="float", dest="emax",
                   help="maximum value of the energy axis")
 parser.add_option("--normalize", action="store_true", dest="normalize_xaxis", default=False,
                   help="normalize the x axis to unity.")
-
+parser.add_option("--ex", action="store", type="string", dest="plot_ex", default="",
+                  help="Plot experimental points from file")
 
 # font styles 
 mpl.rc('font', **{'family': 'Times New Roman', 'sans-serif': ['Helvetica']})
@@ -45,7 +46,7 @@ mpl.rc('lines', linewidth = 1.5)
 mpl.rc('legend', fontsize='small')
 #mpl.rc('text', usetex=True)
 # line colors and styles
-color = ['b', 'g', 'r', 'm', 'k', 'c', 'y', 'r']
+color = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7']
 lsty = ['-', '-', '-', '-', '--', '--', '--', '--']
 
 
@@ -142,6 +143,10 @@ def get_xy_minmax(array):
 
     return xmin, xmax, ymin, ymax
 
+def plot_exper(fn):
+    dat=np.loadtxt(fn).T
+    plt.plot(dat[0], dat[1], '.', color='C8', label=fn)
+
 
 if __name__ == '__main__':
     '''
@@ -187,6 +192,9 @@ if __name__ == '__main__':
             ax.plot(data_merged[i][0:, 0], data_merged[i][0:, j],
                      linestyle=lsty[i], color=color[i])
 
+    if options.plot_ex :
+        plot_exper(options.plot_ex)
+
     if options.unitname.lower() == "mev":
         ax.set_ylabel("Frequency (meV)", labelpad=20)
     elif options.unitname.lower() == "thz":
@@ -214,7 +222,7 @@ if __name__ == '__main__':
     ax.xaxis.grid(True, linestyle='-')
 
     if options.print_key:
-        plt.legend(loc='best', prop={'size': 10})
+        plt.legend(loc='best', prop={'size': 8})
 
-#	plt.savefig('band_tmp.png', dpi=300, transparent=True)
-    plt.show()
+    plt.savefig('band_tmp.pdf', dpi=300, transparent=False)
+#    plt.show()
