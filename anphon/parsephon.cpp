@@ -8,7 +8,6 @@
  or http://opensource.org/licenses/mit-license.php for information.
 */
 
-#include "mpi_common.h"
 #include "parsephon.h"
 #include "conductivity.h"
 #include "dynamical.h"
@@ -260,12 +259,12 @@ void Input::parse_general_vars()
         error->exit("parse_general_vars",
                     "NONANALYTIC-tag can take 0, 1, 2, or 3.");
     }
-    if (nonanalytic == 3) {
-        if (mode == "SCPH") {
-            error->exit("parse_general_vars",
-                        "Sorry. NONANALYTIC=3 is not supported for MODE = SCPH.");
-        }
-    }
+    // if (nonanalytic == 3) {
+    //     if (mode == "SCPH") {
+    //         error->exit("parse_general_vars",
+    //                     "Sorry. NONANALYTIC=3 is not supported for MODE = SCPH.");
+    //     }
+    // }
 
     // Copy the values to appropriate classes.
 
@@ -327,10 +326,7 @@ void Input::parse_scph_vars()
 {
     // Read input parameters in the &scph-field.
 
-    int i;
-
     struct stat st;
-    std::string str_tmp;
     std::vector<std::string> input_list{
         "KMESH_SCPH", "KMESH_INTERPOLATE", "MIXALPHA", "MAXITER",
         "RESTART_SCPH", "IALGO", "SELF_OFFDIAG", "TOL_SCPH",
@@ -384,7 +380,7 @@ void Input::parse_scph_vars()
     assign_val(lower_temp, "LOWER_TEMP", scph_var_dict);
     assign_val(warm_start, "WARMSTART", scph_var_dict);
 
-    str_tmp = scph_var_dict["KMESH_SCPH"];
+    std::string str_tmp = scph_var_dict["KMESH_SCPH"];
 
     if (!str_tmp.empty()) {
 
@@ -433,7 +429,7 @@ void Input::parse_scph_vars()
 
     // Copy the values to appropriate classes.
 
-    for (i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i) {
         scph->kmesh_scph[i] = kmesh_v[i];
         scph->kmesh_interpolate[i] = kmesh_interpolate_v[i];
     }
@@ -461,10 +457,10 @@ void Input::parse_analysis_vars(const bool use_default_values)
     std::vector<std::string> input_list{
         "PRINTEVEC", "PRINTXSF", "PRINTVEL", "QUARTIC", "KS_INPUT",
         "REALPART", "ISOTOPE", "ISOFACT",
-        "FSTATE_W", "FSTATE_K", "PRIMTMSD", "DOS", "PDOS", "TDOS",
+        "FSTATE_W", "FSTATE_K", "PRINTMSD", "DOS", "PDOS", "TDOS",
         "GRUNEISEN", "NEWFCS", "DELTA_A", "ANIME", "ANIME_CELLSIZE",
         "ANIME_FORMAT", "SPS", "PRINTV3", "PRINTPR", "FC2_EWALD",
-        "KAPPA_SPEC", "SELF_W", "FE_BUBBLE"
+        "KAPPA_SPEC", "SELF_W", "FE_BUBBLE", "UCORR", "SHIFT_UCORR"
     };
 
     unsigned int cellsize[3];
@@ -482,6 +478,7 @@ void Input::parse_analysis_vars(const bool use_default_values)
     bool print_vel = false;
     bool print_evec = false;
     bool print_msd = false;
+    bool print_ucorr = false;
 
     bool compute_dos = true;
     bool projected_dos = false;
@@ -516,6 +513,7 @@ void Input::parse_analysis_vars(const bool use_default_values)
         assign_val(print_vel, "PRINTVEL", analysis_var_dict);
         assign_val(print_evec, "PRINTEVEC", analysis_var_dict);
         assign_val(print_msd, "PRINTMSD", analysis_var_dict);
+        assign_val(print_ucorr, "UCORR", analysis_var_dict);
 
         assign_val(compute_dos, "DOS", analysis_var_dict);
         assign_val(projected_dos, "PDOS", analysis_var_dict);
@@ -606,6 +604,35 @@ void Input::parse_analysis_vars(const bool use_default_values)
         }
     }
 
+    if (print_ucorr) {
+        std::string str_shift_ucorr;
+        std::vector<std::string> list_shift_ucorr;
+        assign_val(str_shift_ucorr, "SHIFT_UCORR", analysis_var_dict);
+
+        if (!str_shift_ucorr.empty()) {
+            int shift_ucorr[3];
+            split_str_by_space(str_shift_ucorr, list_shift_ucorr);
+            if (list_shift_ucorr.size() != 3) {
+                error->exit("parse_analysis_vars",
+                            "The number of entries for SHIFT_UCORR must be 3.");
+            }
+
+            for (i = 0; i < 3; ++i) {
+                try {
+                    shift_ucorr[i] = boost::lexical_cast<int>(list_shift_ucorr[i]);
+                }
+                catch (std::exception &e) {
+                    std::cout << e.what() << std::endl;
+                    error->exit("parse_analysis_vars",
+                                "SHIFT_UCORR must be an array of integers.");
+                }
+            }
+            for (i = 0; i < 3; ++i) {
+                writes->shift_ucorr[i] = shift_ucorr[i];
+            }
+        }
+    }
+
     // Copy the values to appropriate classes
 
     phonon_velocity->print_velocity = print_vel;
@@ -613,6 +640,7 @@ void Input::parse_analysis_vars(const bool use_default_values)
     dynamical->participation_ratio = participation_ratio;
     writes->print_xsf = print_xsf;
     writes->print_anime = print_anime;
+    writes->print_ucorr = print_ucorr;
 
     if (print_anime) {
         for (i = 0; i < 3; ++i) {
@@ -693,7 +721,7 @@ void Input::parse_cell_parameter()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
+            trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -713,7 +741,7 @@ void Input::parse_cell_parameter()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
+            trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -731,8 +759,8 @@ void Input::parse_cell_parameter()
     for (i = 0; i < 4; ++i) {
 
         line = line_vec[i];
-        boost::split(line_split, line,
-                     boost::is_any_of("\t "), boost::token_compress_on);
+        split(line_split, line,
+              boost::is_any_of("\t "), boost::token_compress_on);
 
         if (i == 0) {
             // Lattice factor a
@@ -768,7 +796,7 @@ void Input::parse_kpoints()
 {
     // Read the settings in the &kpoint field.
 
-    int i, kpmode;
+    int kpmode;
     std::string line, line_wo_comment, str_tmp;
     std::vector<std::string> kpelem, line_vec;
     std::string::size_type pos_first_comment_tag;
@@ -788,7 +816,7 @@ void Input::parse_kpoints()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
+            trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -808,7 +836,7 @@ void Input::parse_kpoints()
                 line_wo_comment = line.substr(0, pos_first_comment_tag);
             }
 
-            boost::trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
+            trim_if(line_wo_comment, boost::is_any_of("\t\r\n "));
 
             if (line_wo_comment.empty()) continue;
             if (is_endof_entry(line_wo_comment)) break;
@@ -817,9 +845,9 @@ void Input::parse_kpoints()
         }
     }
 
-    for (i = 0; i < line_vec.size(); ++i) {
+    for (int i = 0; i < line_vec.size(); ++i) {
         line = line_vec[i];
-        boost::split(kpelem, line, boost::is_any_of("\t "), boost::token_compress_on);
+        split(kpelem, line, boost::is_any_of("\t "), boost::token_compress_on);
 
         if (i == 0) {
             // kpmode 
@@ -899,27 +927,25 @@ int Input::locate_tag(std::string key)
         }
         return ret;
 
-    } else {
+    }
+    ifs_input.clear();
+    ifs_input.seekg(0, std::ios_base::beg);
 
-        ifs_input.clear();
-        ifs_input.seekg(0, std::ios_base::beg);
-
-        while (ifs_input >> line) {
+    while (ifs_input >> line) {
 #ifdef _USE_BOOST
             boost::to_lower(line);
             boost::trim(line);
 #else
-            std::transform(line.begin(), line.end(), line.begin(), tolower);
-            line2 = line;
-            line = trim(line2);
+        std::transform(line.begin(), line.end(), line.begin(), tolower);
+        line2 = line;
+        line = trim(line2);
 #endif
-            if (line == key) {
-                ret = 1;
-                break;
-            }
+        if (line == key) {
+            ret = 1;
+            break;
         }
-        return ret;
     }
+    return ret;
 }
 
 void Input::get_var_dict(const std::vector<std::string> &input_list,
@@ -972,7 +998,7 @@ void Input::get_var_dict(const std::vector<std::string> &input_list,
 #ifdef _USE_BOOST
                 std::string str_tmp = boost::trim_copy(*it);
 #else
-                std::string str_tmp = trim((*it));
+                std::string str_tmp = trim(*it);
 #endif
                 if (!str_tmp.empty()) {
 #ifdef _USE_BOOST
@@ -1096,13 +1122,13 @@ void Input::get_var_dict(const std::vector<std::string> &input_list,
 }
 
 
-bool Input::is_endof_entry(const std::string str)
+bool Input::is_endof_entry(const std::string str) const
 {
     return str[0] == '/';
 }
 
 void Input::split_str_by_space(const std::string str,
-                               std::vector<std::string> &str_vec)
+                               std::vector<std::string> &str_vec) const
 {
     std::string str_tmp;
     std::istringstream is(str);
@@ -1132,9 +1158,8 @@ void Input::assign_val(T &val,
             val = boost::lexical_cast<T>(dict[key]);
         }
         catch (std::exception &e) {
-            std::string str_tmp;
             std::cout << e.what() << std::endl;
-            str_tmp = "Invalid entry for the " + key + " tag.\n";
+            std::string str_tmp = "Invalid entry for the " + key + " tag.\n";
             str_tmp += " Please check the input value.";
             error->exit("assign_val", str_tmp.c_str());
         }

@@ -106,8 +106,6 @@ def write_POSCAR(prefix, counter, header, nzerofills,
     f.close()
 
 
-
-
 def get_coordinate_VASP(xml_file, nat):
 
     x = []
@@ -131,7 +129,6 @@ def get_coordinate_VASP(xml_file, nat):
 
 def print_displacements_VASP(xml_files,
                              lavec, nat, x0,
-                             require_conversion,
                              conversion_factor,
                              file_offset):
 
@@ -158,9 +155,7 @@ def print_displacements_VASP(xml_files,
         for idata in range(ndata):
             disp = x[idata, :, :] - x0 - disp_offset
             disp = np.dot(vec_refold(disp), lavec_transpose)
-
-            if require_conversion:
-                disp *= conversion_factor
+            disp *= conversion_factor
 
             for i in range(nat):
                 print("%15.7F %15.7F %15.7F" % (disp[i, 0],
@@ -191,7 +186,6 @@ def get_atomicforces_VASP(xml_file):
 
 def print_atomicforces_VASP(xml_files,
                             nat,
-                            require_conversion,
                             conversion_factor,
                             file_offset):
 
@@ -212,14 +206,125 @@ def print_atomicforces_VASP(xml_files,
 
         for idata in range(ndata):
             f = data[idata, :, :] - force_offset
-
-            if require_conversion:
-                f *= conversion_factor
+            f *= conversion_factor
 
             for i in range(nat):
                 print("%15.8E %15.8E %15.8E" % (f[i][0],
                                                 f[i][1],
                                                 f[i][2]))
+
+def get_coordinate_and_force_VASP(xml_file, nat):
+    
+    x = []
+    f = []
+
+    try:
+        xml = etree.parse(xml_file)
+        root = xml.getroot()
+
+        for elems in root.findall('calculation/structure/varray'):
+            str_coord = [elems2.text for elems2 in elems.findall('v')]
+            n = len(str_coord)
+
+            for i in range(n):
+                x.extend([t for t in str_coord[i].split()])
+
+        for elems in root.findall('calculation/varray'):
+            if elems.get('name') == "forces":
+                str_force = [elems2.text for elems2 in elems.findall('v')]
+
+                for i in range(len(str_force)):
+                    f.extend([t for t in str_force[i].split()])
+    
+        return np. array(x, dtype=np.float), np.array(f, dtype=np.float)
+
+    except:
+        print("Error in reading atomic positions and forces from the XML file: %s" % xml_file)
+
+
+def print_displacements_and_forces_VASP(xml_files,
+                                        lavec, nat, x0,
+                                        conversion_factor_disp,
+                                        conversion_factor_force,
+                                        conversion_factor_energy,
+                                        file_offset,
+                                        filter_emin,
+                                        filter_emax):
+    x0 = np.round(x0, 8)
+    lavec_transpose = lavec.transpose()
+    vec_refold = np.vectorize(refold)
+
+    if file_offset is None:
+        disp_offset = np.zeros((nat, 3))
+        force_offset = np.zeros((nat, 3))
+        epot_offset = 0
+
+    else:
+        x0_offset, force_offset = get_coordinate_and_force_VASP(file_offset, nat)
+        epot_offset, _ = get_energies_VASP(file_offset)
+        epot_offset = np.array(epot_offset, dtype='float')
+        try:
+            x0_offset = np.reshape(x0_offset, (nat, 3))
+        except:
+            print("File %s contains too many position entries" % file_offset)
+
+        try:
+            force_offset = np.reshape(force_offset, (nat, 3))
+        except:
+            print("File %s contains too many force entries" % file_offset)
+
+        disp_offset = x0_offset - x0
+
+        if len(epot_offset) > 1:
+            print("File %s contains too many energy entries" % file_offset)
+
+    for search_target in xml_files:
+
+        x, force = get_coordinate_and_force_VASP(search_target, nat)
+        epot, ekin = get_energies_VASP(search_target)
+
+        ndata = len(x) // (3 * nat)
+        ndata2 = len(force) // (3 * nat)
+
+        if ndata != ndata2:
+            print("The numbers of displacement and force entries are different.")
+            exit(1)
+        
+        ndata_energy = len(epot)
+        if ndata_energy != ndata:
+            print("The numbers of displacement and energy entries are different.")
+            exit(1)
+        
+        epot = np.array(epot, dtype='float')
+        epot -= epot_offset
+
+        x = np.reshape(x, (ndata, nat, 3))
+        force = np.reshape(force, (ndata, nat, 3))
+
+        for idata in range(ndata):
+            disp = x[idata, :, :] - x0 - disp_offset
+            disp = np.dot(vec_refold(disp), lavec_transpose)
+            f = force[idata, :, :] - force_offset
+
+            disp *= conversion_factor_disp
+            f *= conversion_factor_force
+
+            if filter_emin is not None:
+                if filter_emin > epot[idata]:
+                    continue
+            
+            if filter_emax is not None:
+                if filter_emax < epot[idata]:
+                    continue
+            
+            print("# Filename: %s, Snapshot: %d, E_pot (eV): %s" % (search_target, idata + 1, epot[idata]))
+            for i in range(nat):
+                print("%15.7F %15.7F %15.7F %20.8E %15.8E %15.8E" % (disp[i, 0],
+                                                                     disp[i, 1],
+                                                                     disp[i, 2],
+                                                                     f[i][0],
+                                                                     f[i][1],
+                                                                     f[i][2]))
 
 
 def get_energies_VASP(xml_file):
@@ -250,7 +355,6 @@ def get_energies_VASP(xml_file):
 
 
 def print_energies_VASP(xml_files,
-                        require_conversion,
                         conversion_factor,
                         file_offset):
 
@@ -276,23 +380,82 @@ def print_energies_VASP(xml_files,
         for i in range(len(etot)):
             if etot[i] != 'N/A':
                 val_etot = float(etot[i]) - etot_offset
-                if require_conversion:
-                    print("%15.8E" % (val_etot * conversion_factor), end=' ')
-                else:
-                    print("%15.8E" % val_etot, end=' ')
+                print("%15.8E" % (val_etot * conversion_factor), end=' ')
             else:
                 print("%s" % etot[i], end=' ')
 
             if ekin[i] != 'N/A':
                 val_ekin = float(ekin[i]) - ekin_offset
-                if require_conversion:
-                    print("%15.8E" % (val_ekin * conversion_factor))
-                else:
-                    print("%15.8E" % val_ekin)
+                print("%15.8E" % (val_ekin * conversion_factor))
             else:
                 print("%s" % ekin[i])
 
+def get_unit_conversion_factor(str_unit):
+    
+    Bohr_radius = 0.52917721067
+    Rydberg_to_eV = 13.60569253
 
+    disp_conv_factor = 1.0
+    energy_conv_factor = 1.0
+    force_conv_factor = 1.0
+
+    if str_unit == "ev":
+        disp_conv_factor = 1.0
+        energy_conv_factor = 1.0
+
+    elif str_unit == "rydberg":
+        disp_conv_factor = 1.0 / Bohr_radius
+        energy_conv_factor = 1.0 / Rydberg_to_eV
+
+    elif str_unit == "hartree":
+        disp_conv_factor = 1.0 / Bohr_radius
+        energy_conv_factor = 0.5 / Rydberg_to_eV
+
+    else:
+        print("This cannot happen.")
+        exit(1)
+    
+    force_conv_factor = energy_conv_factor / disp_conv_factor
+
+    return disp_conv_factor, force_conv_factor, energy_conv_factor
+
+
+def parse(SPOSCAR_init, xml_files, xml_file_offset, str_unit,
+          print_disp, print_force, print_energy,
+          filter_emin, filter_emax):
+
+    aa, _, elems, nats, x_frac0 = read_POSCAR(SPOSCAR_init)
+
+    scale_disp, scale_force, scale_energy = get_unit_conversion_factor(str_unit)
+
+    if print_disp == True and print_force == True:
+        print_displacements_and_forces_VASP(xml_files,
+                                            aa, np.sum(nats),
+                                            x_frac0,
+                                            scale_disp,
+                                            scale_force,
+                                            scale_energy,
+                                            xml_file_offset,
+                                            filter_emin,
+                                            filter_emax)
+    elif print_disp == True:
+        print_displacements_VASP(xml_files, 
+                                 aa, np.sum(nats), 
+                                 x_frac0,
+                                 scale_disp,
+                                 xml_file_offset)
+    elif print_force == True:
+        print_atomicforces_VASP(xml_files, 
+                                np.sum(nats),
+                                scale_force, 
+                                xml_file_offset)
+
+    elif print_energy == True:
+        print_energies_VASP(xml_files, 
+                            scale_energy, 
+                            xml_file_offset)
+
+    
 
 def refold(x):
     if x >= 0.5:

@@ -13,7 +13,6 @@
 #include "anharmonic_core.h"
 #include "constants.h"
 #include "dynamical.h"
-#include "error.h"
 #include "kpoint.h"
 #include "mathfunctions.h"
 #include "memory.h"
@@ -44,16 +43,16 @@ void Thermodynamics::setup()
 }
 
 double Thermodynamics::Cv(const double omega,
-                          const double T)
+                          const double T) const
 {
     if (std::abs(T) < eps) return 0.0;
 
-    double x = omega / (T_to_Ryd * T);
+    const auto x = omega / (T_to_Ryd * T);
     return k_Boltzmann * std::pow(x / (2.0 * sinh(0.5 * x)), 2);
 }
 
 double Thermodynamics::Cv_classical(const double omega,
-                                    const double T)
+                                    const double T) const
 {
     if (std::abs(T) < eps) return 0.0;
 
@@ -61,32 +60,32 @@ double Thermodynamics::Cv_classical(const double omega,
 }
 
 double Thermodynamics::fB(const double omega,
-                          const double T)
+                          const double T) const
 {
     if (std::abs(T) < eps || omega < eps8) return 0.0;
 
-    double x = omega / (T_to_Ryd * T);
+    const auto x = omega / (T_to_Ryd * T);
     return 1.0 / (std::exp(x) - 1.0);
 }
 
 double Thermodynamics::fC(const double omega,
-                          const double T)
+                          const double T) const
 {
     if (std::abs(T) < eps || omega < eps8) return 0.0;
 
-    double x = omega / (T_to_Ryd * T);
+    const auto x = omega / (T_to_Ryd * T);
     return 1.0 / x;
 }
 
-double Thermodynamics::Cv_tot(const double T)
+double Thermodynamics::Cv_tot(const double T) const
 {
     int i;
     unsigned int ik, is;
-    unsigned int ns = dynamical->neval;
+    const auto ns = dynamical->neval;
     double omega;
-    double ret = 0.0;
+    auto ret = 0.0;
 
-    int N = kpoint->nk_irred * ns;
+    const auto N = kpoint->nk_irred * ns;
     int ik_irred;
 
     if (classical) {
@@ -121,15 +120,15 @@ double Thermodynamics::Cv_tot(const double T)
 }
 
 
-double Thermodynamics::internal_energy(const double T)
+double Thermodynamics::internal_energy(const double T) const
 {
     int i;
     unsigned int ik, is;
-    unsigned int ns = dynamical->neval;
+    const auto ns = dynamical->neval;
     double omega;
-    double ret = 0.0;
+    auto ret = 0.0;
 
-    int N = kpoint->nk_irred * ns;
+    const auto N = kpoint->nk_irred * ns;
     int ik_irred;
 
     if (classical) {
@@ -163,15 +162,15 @@ double Thermodynamics::internal_energy(const double T)
     return ret * 0.5;
 }
 
-double Thermodynamics::vibrational_entropy(const double T)
+double Thermodynamics::vibrational_entropy(const double T) const
 {
     int i;
     unsigned int ik, is;
-    unsigned int ns = dynamical->neval;
+    const auto ns = dynamical->neval;
     double omega, x;
-    double ret = 0.0;
+    auto ret = 0.0;
 
-    int N = kpoint->nk_irred * ns;
+    const auto N = kpoint->nk_irred * ns;
     int ik_irred;
 
     if (classical) {
@@ -205,15 +204,15 @@ double Thermodynamics::vibrational_entropy(const double T)
     return -k_Boltzmann * ret;
 }
 
-double Thermodynamics::free_energy(const double T)
+double Thermodynamics::free_energy(const double T) const
 {
     int i;
     unsigned int ik, is;
-    unsigned int ns = dynamical->neval;
+    const auto ns = dynamical->neval;
     double omega, x;
-    double ret = 0.0;
+    auto ret = 0.0;
 
-    int N = kpoint->nk_irred * ns;
+    const auto N = kpoint->nk_irred * ns;
     int ik_irred;
 
     if (classical) {
@@ -259,13 +258,13 @@ double Thermodynamics::free_energy(const double T)
 
 double Thermodynamics::disp2_avg(const double T,
                                  const unsigned int ns1,
-                                 const unsigned int ns2)
+                                 const unsigned int ns2) const
 {
     int i;
     double ret = 0.0;
     unsigned int ik, is;
-    unsigned int nk = kpoint->nk;
-    unsigned int ns = dynamical->neval;
+    const auto nk = kpoint->nk;
+    const auto ns = dynamical->neval;
     double omega;
 
     int N = nk * ns;
@@ -310,8 +309,74 @@ double Thermodynamics::disp2_avg(const double T,
     return ret;
 }
 
+double Thermodynamics::disp_corrfunc(const double T_in,
+                                     const unsigned int ncrd1,
+                                     const unsigned int ncrd2,
+                                     const double cell_shift[3],
+                                     const unsigned int nk,
+                                     const unsigned int ns,
+                                     double **xk_in,
+                                     double **eval_in,
+                                     std::complex<double> ***evec_in) const
+{
+    int i;
+    int N = nk * ns;
+    unsigned int ik, is;
+    double omega;
+    double phase;
+    const std::complex<double> im(0.0, 1.0);
+    double ret = 0.0;
+
+    if (classical) {
+#pragma omp parallel for private(ik, is, omega, phase), reduction(+:ret)
+        for (i = 0; i < N; ++i) {
+            ik = i / ns;
+            is = i % ns;
+            omega = eval_in[ik][is];
+
+            if (omega < eps8) continue;
+
+            phase = 2.0 * pi * (xk_in[ik][0] * cell_shift[0]
+                + xk_in[ik][1] * cell_shift[1]
+                + xk_in[ik][2] * cell_shift[2]);
+
+            ret += real(std::conj(evec_in[ik][is][ncrd1])
+                    * evec_in[ik][is][ncrd2]
+                    * std::exp(phase))
+                * T_in * T_to_Ryd / (omega * omega);
+
+        }
+
+    } else {
+#pragma omp parallel for private(ik, is, omega, phase), reduction(+:ret)
+        for (i = 0; i < N; ++i) {
+            ik = i / ns;
+            is = i % ns;
+            omega = eval_in[ik][is];
+
+            if (omega < eps8) continue;
+
+            phase = 2.0 * pi * (xk_in[ik][0] * cell_shift[0]
+                + xk_in[ik][1] * cell_shift[1]
+                + xk_in[ik][2] * cell_shift[2]);
+
+            ret += real(std::conj(evec_in[ik][is][ncrd1])
+                    * evec_in[ik][is][ncrd2]
+                    * std::exp(im * phase))
+                * (fB(omega, T_in) + 0.5) / omega;
+        }
+    }
+
+    ret *= 1.0 / (static_cast<double>(nk)
+        * std::sqrt(system->mass[system->map_p2s[ncrd1 / 3][0]]
+            * system->mass[system->map_p2s[ncrd2 / 3][0]]));
+
+    return ret;
+}
+
+
 double Thermodynamics::coth_T(const double omega,
-                              const double T)
+                              const double T) const
 {
     // This function returns coth(hbar*omega/2*kB*T)
 
@@ -325,7 +390,7 @@ double Thermodynamics::coth_T(const double omega,
 
 void Thermodynamics::compute_free_energy_bubble()
 {
-    unsigned int NT = static_cast<unsigned int>((system->Tmax - system->Tmin) / system->dT) + 1;
+    const auto NT = static_cast<unsigned int>((system->Tmax - system->Tmin) / system->dT) + 1;
 
     if (mympi->my_rank == 0) {
         std::cout << std::endl;
@@ -348,25 +413,22 @@ void Thermodynamics::compute_free_energy_bubble()
 
 void Thermodynamics::compute_FE_bubble(double **eval,
                                        std::complex<double> ***evec,
-                                       double *FE_bubble)
+                                       double *FE_bubble) const
 {
     // This function calculates the free energy of the bubble diagram
     int i;
-    int ik;
-    int multi;
-    double omega0, omega1, omega2, omega_sum[2];
-    double n0, n1, n2, nsum[2];
-    unsigned int nk = kpoint->nk;
-    unsigned int nk_reduced = kpoint->kpoint_irred_all.size();
-    unsigned int ns = dynamical->neval;
-    double v3_tmp;
-    unsigned int ik0, ik1, ik2, is0, is1, is2, i0, iT;
+    double omega_sum[2];
+    double nsum[2];
+    const auto nk = kpoint->nk;
+    const auto nk_reduced = kpoint->kpoint_irred_all.size();
+    const auto ns = dynamical->neval;
+    unsigned int i0, iT;
     unsigned int arr_cubic[3];
-    int nks0 = nk_reduced * ns;
-    unsigned int NT = static_cast<unsigned int>((system->Tmax - system->Tmin) / system->dT) + 1;
-    double temp;
-    double factor = -1.0 / (static_cast<double>(nk * nk) * 48.0);
+    const int nks0 = nk_reduced * ns;
+    const auto NT = static_cast<unsigned int>((system->Tmax - system->Tmin) / system->dT) + 1;
+    const auto factor = -1.0 / (static_cast<double>(nk * nk) * 48.0);
 
+    double n0, n1, n2;
     double *FE_local;
     double *FE_tmp;
 
@@ -400,59 +462,70 @@ void Thermodynamics::compute_FE_bubble(double **eval,
 
         if (vks_l[i0] != -1) {
 
-            ik0 = kpoint->kpoint_irred_all[vks_l[i0] / ns][0].knum;
-            is0 = vks_l[i0] % ns;
+            const auto ik0 = kpoint->kpoint_irred_all[vks_l[i0] / ns][0].knum;
+            const auto is0 = vks_l[i0] % ns;
 
             kpoint->get_unique_triplet_k(vks_l[i0] / ns,
                                          anharmonic_core->use_triplet_symmetry,
                                          true,
                                          triplet, 1);
 
-            int npair_uniq = triplet.size();
+            const int npair_uniq = triplet.size();
 
             arr_cubic[0] = ns * ik0 + is0;
 
             for (iT = 0; iT < NT; ++iT) FE_tmp[iT] = 0.0;
 
-            for (ik = 0; ik < npair_uniq; ++ik) {
-                multi = static_cast<double>(triplet[ik].group.size());
+            for (int ik = 0; ik < npair_uniq; ++ik) {
+                int multi = triplet[ik].group.size();
 
                 arr_cubic[0] = ns * ik0 + is0;
 
-                ik1 = triplet[ik].group[0].ks[0];
-                ik2 = triplet[ik].group[0].ks[1];
+                const unsigned int ik1 = triplet[ik].group[0].ks[0];
+                const unsigned int ik2 = triplet[ik].group[0].ks[1];
 
-                for (is1 = 0; is1 < ns; ++is1) {
+                for (unsigned int is1 = 0; is1 < ns; ++is1) {
                     arr_cubic[1] = ns * ik1 + is1;
 
-                    for (is2 = 0; is2 < ns; ++is2) {
+                    for (unsigned int is2 = 0; is2 < ns; ++is2) {
                         arr_cubic[2] = ns * ik2 + is2;
 
-                        omega0 = eval[ik0][is0];
-                        omega1 = eval[ik1][is1];
-                        omega2 = eval[ik2][is2];
+                        const auto omega0 = eval[ik0][is0];
+                        const auto omega1 = eval[ik1][is1];
+                        const auto omega2 = eval[ik2][is2];
 
                         omega_sum[0] = 1.0 / (omega0 + omega1 + omega2);
                         omega_sum[1] = 1.0 / (-omega0 + omega1 + omega2);
 
-                        v3_tmp = std::norm(anharmonic_core->V3(arr_cubic)) * static_cast<double>(multi);
+                        const auto v3_tmp = std::norm(anharmonic_core->V3(arr_cubic))
+                            * static_cast<double>(multi);
 
 
                         for (iT = 0; iT < NT; ++iT) {
-                            temp = system->Tmin + static_cast<double>(iT) * system->dT;
-                            n0 = thermodynamics->fB(omega0, temp);
-                            n1 = thermodynamics->fB(omega1, temp);
-                            n2 = thermodynamics->fB(omega2, temp);
+                            const auto temp = system->Tmin + static_cast<double>(iT) * system->dT;
 
-                            nsum[0] = (1.0 + n0) * (1.0 + n1 + n2) + n1 * n2;
-                            nsum[1] = n0 * n1 - n1 * n2 + n2 * n0 + n0;
+                            if (classical) {
+                                n0 = fC(omega0, temp);
+                                n1 = fC(omega1, temp);
+                                n2 = fC(omega2, temp);
+
+                                nsum[0] = n0 * (n1 + n2) + n1 * n2;
+                                nsum[1] = n0 * (n1 + n2) - n1 * n2;
+                            } else {
+                                n0 = fB(omega0, temp);
+                                n1 = fB(omega1, temp);
+                                n2 = fB(omega2, temp);
+
+                                nsum[0] = (1.0 + n0) * (1.0 + n1 + n2) + n1 * n2;
+                                nsum[1] = n0 * n1 - n1 * n2 + n2 * n0 + n0;
+                            }
 
                             FE_tmp[iT] += v3_tmp * (nsum[0] * omega_sum[0] + 3.0 * nsum[1] * omega_sum[1]);
                         }
                     }
                 }
             }
-            double weight = static_cast<double>(kpoint->kpoint_irred_all[vks_l[i0] / ns].size());
+            const auto weight = static_cast<double>(kpoint->kpoint_irred_all[vks_l[i0] / ns].size());
             for (iT = 0; iT < NT; ++iT) FE_local[iT] += FE_tmp[iT] * weight;
         }
     }
@@ -470,28 +543,24 @@ void Thermodynamics::compute_FE_bubble(double **eval,
 
 double Thermodynamics::compute_FE_bubble_SCPH(const double temp,
                                               double **eval,
-                                              std::complex<double> ***evec)
+                                              std::complex<double> ***evec) const
 {
     // This function calculates the free energy from the bubble diagram
     // at the given temperature and lattice dynamics wavefunction
 
-    int ik;
-    int multi;
-    double omega0, omega1, omega2, omega_sum[2];
-    double n0, n1, n2, nsum[2];
-    unsigned int nk = kpoint->nk;
-    unsigned int nk_reduced = kpoint->kpoint_irred_all.size();
-    unsigned int ns = dynamical->neval;
-    double v3_tmp;
-    unsigned int ik0, ik1, ik2, is0, is1, is2, i0, iT;
+    double omega_sum[2];
+    double nsum[2];
+    const auto nk = kpoint->nk;
+    const auto nk_reduced = kpoint->kpoint_irred_all.size();
+    const auto ns = dynamical->neval;
+    unsigned int i0;
     unsigned int arr_cubic[3];
-    int nks0 = nk_reduced * ns;
-    unsigned int NT = static_cast<unsigned int>((system->Tmax - system->Tmin) / system->dT) + 1;
-    double factor = -1.0 / (static_cast<double>(nk * nk) * 48.0);
+    const int nks0 = nk_reduced * ns;
+    const auto NT = static_cast<unsigned int>((system->Tmax - system->Tmin) / system->dT) + 1;
+    const auto factor = -1.0 / (static_cast<double>(nk * nk) * 48.0);
+    double n0, n1, n2;
 
-    double FE_local;
-    double FE_tmp;
-    double FE_return = 0.0;
+    auto FE_return = 0.0;
 
     std::vector<KsListGroup> triplet;
 
@@ -515,7 +584,7 @@ double Thermodynamics::compute_FE_bubble_SCPH(const double temp,
         vks_l.push_back(-1);
     }
 
-    FE_local = 0.0;
+    double FE_local = 0.0;
 
     if (mympi->my_rank == 0) {
         std::cout << " Total number of modes per MPI process: " << nk_tmp << std::endl;
@@ -525,60 +594,68 @@ double Thermodynamics::compute_FE_bubble_SCPH(const double temp,
 
         if (vks_l[i0] != -1) {
 
-            ik0 = kpoint->kpoint_irred_all[vks_l[i0] / ns][0].knum;
-            is0 = vks_l[i0] % ns;
+            const auto ik0 = kpoint->kpoint_irred_all[vks_l[i0] / ns][0].knum;
+            const auto is0 = vks_l[i0] % ns;
 
             kpoint->get_unique_triplet_k(vks_l[i0] / ns,
                                          anharmonic_core->use_triplet_symmetry,
                                          true,
                                          triplet, 1);
 
-            int npair_uniq = triplet.size();
+            const int npair_uniq = triplet.size();
 
             arr_cubic[0] = ns * ik0 + is0;
 
-            FE_tmp = 0.0;
+            auto FE_tmp = 0.0;
 
-            for (ik = 0; ik < npair_uniq; ++ik) {
-                multi = static_cast<double>(triplet[ik].group.size());
+            for (int ik = 0; ik < npair_uniq; ++ik) {
+                int multi = triplet[ik].group.size();
 
                 arr_cubic[0] = ns * ik0 + is0;
 
-                ik1 = triplet[ik].group[0].ks[0];
-                ik2 = triplet[ik].group[0].ks[1];
+                const unsigned int ik1 = triplet[ik].group[0].ks[0];
+                const unsigned int ik2 = triplet[ik].group[0].ks[1];
 
-
-                for (is1 = 0; is1 < ns; ++is1) {
+                for (unsigned int is1 = 0; is1 < ns; ++is1) {
                     arr_cubic[1] = ns * ik1 + is1;
 
-                    for (is2 = 0; is2 < ns; ++is2) {
+                    for (unsigned int is2 = 0; is2 < ns; ++is2) {
                         arr_cubic[2] = ns * ik2 + is2;
 
-                        for (iT = 0; iT < NT; ++iT) {
+                        for (unsigned int iT = 0; iT < NT; ++iT) {
 
-                            omega0 = eval[ik0][is0];
-                            omega1 = eval[ik1][is1];
-                            omega2 = eval[ik2][is2];
+                            const auto omega0 = eval[ik0][is0];
+                            const auto omega1 = eval[ik1][is1];
+                            const auto omega2 = eval[ik2][is2];
 
                             omega_sum[0] = 1.0 / (omega0 + omega1 + omega2);
                             omega_sum[1] = 1.0 / (-omega0 + omega1 + omega2);
 
-                            v3_tmp = std::norm(anharmonic_core->V3(arr_cubic, eval, evec))
+                            const auto v3_tmp = std::norm(anharmonic_core->V3(arr_cubic, eval, evec))
                                 * static_cast<double>(multi);
 
-                            n0 = thermodynamics->fB(omega0, temp);
-                            n1 = thermodynamics->fB(omega1, temp);
-                            n2 = thermodynamics->fB(omega2, temp);
+                            if (classical) {
+                                n0 = fC(omega0, temp);
+                                n1 = fC(omega1, temp);
+                                n2 = fC(omega2, temp);
 
-                            nsum[0] = (1.0 + n0) * (1.0 + n1 + n2) + n1 * n2;
-                            nsum[1] = n0 * n1 - n1 * n2 + n2 * n0 + n0;
+                                nsum[0] = n0 * (n1 + n2) + n1 * n2;
+                                nsum[1] = n0 * (n1 + n2) - n1 * n2;
+                            } else {
+                                n0 = fB(omega0, temp);
+                                n1 = fB(omega1, temp);
+                                n2 = fB(omega2, temp);
+
+                                nsum[0] = (1.0 + n0) * (1.0 + n1 + n2) + n1 * n2;
+                                nsum[1] = n0 * n1 - n1 * n2 + n2 * n0 + n0;
+                            }
 
                             FE_tmp += v3_tmp * (nsum[0] * omega_sum[0] + 3.0 * nsum[1] * omega_sum[1]);
                         }
                     }
                 }
             }
-            double weight = static_cast<double>(kpoint->kpoint_irred_all[vks_l[i0] / ns].size());
+            const auto weight = static_cast<double>(kpoint->kpoint_irred_all[vks_l[i0] / ns].size());
             FE_local += FE_tmp * weight;
         }
 
@@ -592,4 +669,53 @@ double Thermodynamics::compute_FE_bubble_SCPH(const double temp,
     FE_return *= factor;
 
     return FE_return;
+}
+
+
+double Thermodynamics::FE_scph_correction(unsigned int iT,
+                                          double **eval,
+                                          std::complex<double> ***evec) const
+{
+    const auto nk = kpoint->nk;
+    const auto ns = dynamical->neval;
+    const auto temp = system->Tmin + static_cast<double>(iT) * system->dT;
+    const auto N = nk * ns;
+
+    double ret = 0.0;
+
+#pragma omp parallel for reduction(+ : ret)
+    for (int i = 0; i < N; ++i) {
+        int ik = i / ns;
+        int is = i % ns;
+        double omega = eval[ik][is];
+        if (std::abs(omega) < eps6) continue;
+
+        std::complex<double> tmp_c = std::complex<double>(0.0, 0.0);
+
+        for (int js = 0; js < ns; ++js) {
+            double omega2_harm = dynamical->eval_phonon[ik][js];
+            if (omega2_harm >= 0.0) {
+                omega2_harm = std::pow(omega2_harm, 2);
+            } else {
+                omega2_harm = -std::pow(omega2_harm, 2);
+            }
+
+            for (int ks = 0; ks < ns; ++ks) {
+                for (int ls = 0; ls < ns; ++ls) {
+                    tmp_c += omega2_harm
+                        * dynamical->evec_phonon[ik][js][ks]
+                        * std::conj(dynamical->evec_phonon[ik][js][ls])
+                        * std::conj(evec[ik][is][ks]) * evec[ik][is][ls];
+                }
+            }
+        }
+
+        if (thermodynamics->classical) {
+            ret += (tmp_c.real() - omega * omega) * thermodynamics->fC(omega, temp) / (4.0 * omega);
+        } else {
+            ret += (tmp_c.real() - omega * omega) * (1.0 + 2.0 * thermodynamics->fB(omega, temp)) / (8.0 * omega);
+        }
+    }
+
+    return ret / static_cast<double>(nk);
 }
