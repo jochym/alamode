@@ -7,3 +7,6 @@ tools/dfc2
 tools/qe2alm
 alm/Makefile
 anphon/Makefile
+
+# Jupyter checkpoints
+.ipynb_checkpoints
