@@ -8,3 +8,4 @@ tools/qe2alm
 alm/Makefile
 anphon/Makefile
 __pycache__
+.ipynb_checkpoints
