@@ -6,10 +6,10 @@
 #-----------------------------------------------
 
 #Intel compiler
-#CXX = icpc 
+CXX = icpc 
 
 # OSX
-CXX = g++-8
+#CXX = g++-8
 
 CXXFLAGS = -O2 -std=c++11
 

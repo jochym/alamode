@@ -1,0 +1,37 @@
+#!/bin/bash
+
+export CXX=$1
+
+if [ ".$CXX" == "." ]; then 
+  export CXX=g++
+fi
+
+if [ ".$CXX" == ".icc" ]; then 
+  export CXX=icpc
+fi
+
+if [ ".$CXX" == ".gcc" ]; then 
+  export CXX=g++
+fi
+
+
+if [ "$CXX" == "g++" ]; then 
+  export suf=gcc
+elif [ "$CXX" == "icpc" ]; then
+  export suf=icpc
+else
+  echo "Compiler: gcc(default) or icc "
+  exit 1
+fi
+
+for d in alm anphon ; do
+   ( cd $d
+     make -f Makefile.linux_${suf} clean
+     make -f Makefile.linux_${suf}
+   )
+done
+
+( cd tools
+  make clean
+  make
+)
