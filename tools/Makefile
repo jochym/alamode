@@ -10,7 +10,6 @@
 
 # OSX
 #CXX = g++-8
-# OSX (gcc)
 
 # OSX (clang)
 #CXX = g++
