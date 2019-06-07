@@ -7,13 +7,14 @@
 
 CXX = icpc 
 CXXFLAGS = -O2 -xHOST -qopenmp -std=c++11
-INCLUDE = -I../include
+INCLUDE = -I../include -I/usr/include/eigen3 -I../../spglib
 
 CXXL = ${CXX}
 LDFLAGS = -mkl
 
 LAPACK = 
-LIBS = ${LAPACK}
+LIBSPG = ../../spglib/libsymspg.a 
+LIBS = ${LIBSPG} ${LAPACK}
 
 #-----------------------------------------------
 # General rules 
@@ -24,9 +25,7 @@ LIBS = ${LAPACK}
 
 PROG = alm
 
-CXXSRC= alamode.cpp constraint.cpp error.cpp fcs.cpp files.cpp \
-	fitting.cpp input.cpp interaction.cpp main.cpp memory.cpp \
-	patterndisp.cpp symmetry.cpp system.cpp timer.cpp writes.cpp 
+CXXSRC= $(wildcard *.cpp)
 
 OBJS= ${CXXSRC:.cpp=.o}
 
