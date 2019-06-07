@@ -24,6 +24,12 @@ else
   exit 1
 fi
 
+if [ $suf == "icpc" ]; then
+  . /opt/intel/bin/compilervars.sh intel64
+  . /opt/intel/compilers_and_libraries/linux/mpi/intel64/bin/mpivars.sh
+fi
+
+
 for d in alm anphon ; do
    ( cd $d
      make -f Makefile.linux_${suf} clean
