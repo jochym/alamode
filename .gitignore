@@ -1,4 +1,5 @@
 *.o
+*.pyc
 *~
 alm/alm
 anphon/anphon
