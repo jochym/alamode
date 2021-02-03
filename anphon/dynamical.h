@@ -16,10 +16,8 @@
 #include <complex>
 #include <string>
 
-namespace PHON_NS
-{
-    class DistWithCell
-    {
+namespace PHON_NS {
+    class DistWithCell {
     public:
         int cell;
         double dist;
@@ -36,70 +34,73 @@ namespace PHON_NS
         return a.dist < b.dist;
     }
 
-    class Dynamical : protected Pointers
-    {
+    class Dynamical : protected Pointers {
     public:
         Dynamical(class PHON *);
 
         ~Dynamical();
 
-        unsigned int neval;
-        bool eigenvectors;
-        bool print_eigenvectors;
-        unsigned int symmetrize_borncharge;
-        unsigned int nonanalytic;
-        bool participation_ratio;
-        unsigned int band_connection;
+        unsigned int neval{};
+        bool eigenvectors{};
+        bool print_eigenvectors{};
+        unsigned int symmetrize_borncharge{};
+        unsigned int nonanalytic{};
+        bool participation_ratio{};
+        unsigned int band_connection{};
 
         std::string file_born;
-        double na_sigma;
+        double na_sigma{};
 
-        double **eval_phonon;
-        int **index_bconnect;
-        std::complex<double> ***evec_phonon;
-        double dielec[3][3];
-        double ***borncharge;
+        double **eval_phonon{};
+        int **index_bconnect{};
+        std::complex<double> ***evec_phonon{};
+        double dielec[3][3]{};
+        double ***borncharge{};
 
-        bool **is_imaginary;
+        bool **is_imaginary{};
 
         void diagonalize_dynamical_all();
-        void setup_dynamical(std::string);
+
+        void setup_dynamical();
+
+        void setup_dielectric(const unsigned int verbosity = 1);
 
         void eval_k(double *,
                     double *,
-                    std::vector<FcsClassExtent>,
+                    const std::vector<FcsClassExtent> &,
                     double *,
                     std::complex<double> **,
-                    bool);
+                    bool) const;
 
         void modify_eigenvectors() const;
 
         void eval_k_ewald(double *,
                           double *,
-                          std::vector<FcsClassExtent>,
+                          const std::vector<FcsClassExtent> &,
                           double *,
                           std::complex<double> **,
                           bool) const;
 
 
         double fold(const double) const;
+
         double freq(const double) const;
 
         void calc_participation_ratio_all(std::complex<double> ***,
                                           double **,
                                           double ***) const;
 
-        void calc_analytic_k(double *,
+        void calc_analytic_k(const double *,
                              const std::vector<FcsClassExtent> &,
                              std::complex<double> **) const;
 
         void calc_nonanalytic_k(double *,
                                 double *,
-                                std::complex<double> **);
+                                std::complex<double> **) const;
 
-        void calc_nonanalytic_k2(double *,
+        void calc_nonanalytic_k2(const double *,
                                  double *,
-                                 std::complex<double> **);
+                                 std::complex<double> **) const;
 
         void calc_analytic_k_ewald(double *,
                                    std::vector<FcsClassExtent>,
@@ -107,8 +108,12 @@ namespace PHON_NS
 
     private:
         void set_default_variables();
+
         void deallocate_variables();
-        void load_born(const unsigned int);
+
+        void load_born(const unsigned int flag_symmborn,
+                       const unsigned int verbosity = 1);
+
         void prepare_mindist_list(std::vector<int> **) const;
 
         void calc_atomic_participation_ratio(std::complex<double> *,
@@ -123,10 +128,10 @@ namespace PHON_NS
         void detect_imaginary_branches(double **);
 
 
-        double **xshift_s;
-        char UPLO;
-        std::complex<double> ***dymat;
-        std::vector<int> **mindist_list;
+        double **xshift_s{};
+        char UPLO{};
+        std::complex<double> ***dymat{};
+        std::vector<int> **mindist_list{};
     };
 
     extern "C" {
