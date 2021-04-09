@@ -37,6 +37,17 @@ namespace PHON_NS {
 
         void write_selfenergy_isotope() const;
 
+
+
+
+
+        bool print_zmode;
+
+
+
+
+
+
         double in_kayser(const double) const;
 
         void setWriteOptions(const bool print_msd_,
@@ -101,6 +112,9 @@ namespace PHON_NS {
                                          const unsigned int [3]) const;
 
         void write_eigenvectors() const;
+
+        void print_normalmode_borncharge() const;
+
 
 #ifdef _HDF5
         void write_eigenvectors_HDF5() const;

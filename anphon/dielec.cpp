@@ -241,22 +241,23 @@ std::vector<std::vector<double>> Dielec::get_zstar_mode() const
 {
     const auto ns = dynamical->neval;
     std::vector<std::vector<double>> zstar_mode(ns, std::vector<double>(3));
-    compute_mode_effective_charge(zstar_mode);
-
+    compute_mode_effective_charge(zstar_mode, false);
     return zstar_mode;
 }
 
-void Dielec::compute_mode_effective_charge(std::vector<std::vector<double>> &zstar_mode) const
+void Dielec::compute_mode_effective_charge(std::vector<std::vector<double>> &zstar_mode,
+                                           const bool do_normalize) const
 {
     // Compute the effective charges of normal coordinate at q = 0.
 
-    if (dynamical->file_born == "") {
-        error->exitall("Dielec::compute_mode_effective_charge()", "BORNINFO must be set when DIELEC = 1.");
+    if (dynamical->file_born.empty()) {
+        error->exitall("Dielec::compute_mode_effective_charge()",
+                       "BORNINFO must be set when DIELEC = 1.");
     }
 
     // If borncharge in dynamical class is not initialized, do it here.
     if (!dynamical->borncharge) {
-        const auto verbosity_level = 1;
+        const auto verbosity_level = 0;
         dynamical->setup_dielectric(verbosity_level);
     }
 
@@ -271,29 +272,38 @@ void Dielec::compute_mode_effective_charge(std::vector<std::vector<double>> &zst
 
     for (auto i = 0; i < 3; ++i) xk[i] = 0.0;
 
-    dynamical->eval_k(&xk[0], &xk[0],
-                      fcs_phonon->fc2_ext,
-                      eval, evec, true);
+    // Probably, I need to symmetrize the eigenvector here.
+    std::vector<std::vector<double>> projectors;
+    std::vector<double> vecs(3);
+
+    if (!dynamical->get_projection_directions().empty()) {
+        dynamical->project_degenerate_eigenvectors(&xk[0],
+                                                   dynamical->get_projection_directions(),
+                                                   evec);
+    } else {
+        dynamical->eval_k(&xk[0], &xk[0], fcs_phonon->fc2_ext, eval, evec, true);
+    }
 
     // Divide by sqrt of atomic mass to get normal coordinate
     for (auto i = 0; i < ns; ++i) {
         for (auto j = 0; j < ns; ++j) {
-            evec[i][j] /= std::sqrt(system->mass[system->map_p2s[j / 3][0]]);
+            evec[i][j] /= std::sqrt(system->mass[system->map_p2s[j / 3][0]] / amu_ry);
+//            evec[i][j] /= std::sqrt(system->mass[system->map_p2s[j / 3][0]]);
         }
     }
 
-    // Compute the mode effective charges defined by Eq. (53) of 
+    // Compute the mode effective charges defined by Eq. (53) or its numerator of
     // Gonze & Lee, PRB 55, 10355 (1997).
     for (auto i = 0; i < 3; ++i) {
         for (auto is = 0; is < ns; ++is) {
-            zstar_mode[i][is] = 0.0;
+            zstar_mode[is][i] = 0.0;
             auto normalization_factor = 0.0;
 
             for (auto j = 0; j < ns; ++j) {
-                zstar_mode[i][is] += zstar_atom[j / 3][i][j % 3] * evec[is][j].real();
+                zstar_mode[is][i] += zstar_atom[j / 3][i][j % 3] * evec[is][j].real();
                 normalization_factor += std::norm(evec[is][j]);
             }
-            zstar_mode[i][is] /= std::sqrt(normalization_factor);
+            if (do_normalize) zstar_mode[is][i] /= std::sqrt(normalization_factor);
         }
     }
 

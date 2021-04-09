@@ -35,8 +35,7 @@ namespace PHON_NS {
         bool calc_fstate_k;
         int print_V3;
         int print_V4;
-//        int print_selfenergy;
-        bool print_zmode;
+        int calc_selfenergy;
         bool spectral_func;
 
         std::string ks_input;
@@ -74,23 +73,38 @@ namespace PHON_NS {
         void print_frequency_resolved_final_state(const unsigned int,
                                                   double *);
 
-        void print_V3_elements();
+        void print_V3_elements() const;
+        void print_V4_elements() const;
 
-        void print_Phi3_elements();
+        void print_Phi3_elements() const;
+        void print_Phi4_elements() const;
+
 
         void calc_V3norm2(const unsigned int,
                           const unsigned int,
-                          double **) const;
+                          const std::vector<KsListGroup> &,
+                          std::vector<std::vector<double>> &) const;
 
-        void calc_Phi3(unsigned int,
-                       unsigned int,
+        void calc_V4norm2(const unsigned int,
+                          const unsigned int,
+                          const std::vector<KsListGroup> &,
+                          std::vector<std::vector<double>> &) const;
+
+        void calc_Phi3(const unsigned int,
+                       const unsigned int,
                        const std::vector<KsListGroup> &,
-                       std::complex<double> **) const;
+                       std::vector<std::vector<std::complex<double>>> &) const;
 
-        void print_selfenergy(const int,
+        void calc_Phi4(const unsigned int,
+                       const unsigned int,
+                       const std::vector<KsListGroup> &,
+                       std::vector<std::vector<std::complex<double>>> &) const;
+
+        void print_selfenergy(const unsigned int,
                               double *);
 
-        void print_spectral_function(const int,
+        void print_spectral_function(const unsigned int,
                                      const double *);
+
     };
 }

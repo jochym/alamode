@@ -15,6 +15,7 @@
 #include <vector>
 #include <complex>
 #include <string>
+#include <Eigen/Core>
 
 namespace PHON_NS {
     class DistWithCell {
@@ -81,7 +82,6 @@ namespace PHON_NS {
                           std::complex<double> **,
                           bool) const;
 
-
         double fold(const double) const;
 
         double freq(const double) const;
@@ -103,8 +103,16 @@ namespace PHON_NS {
                                  std::complex<double> **) const;
 
         void calc_analytic_k_ewald(double *,
-                                   std::vector<FcsClassExtent>,
+                                   std::vector <FcsClassExtent>,
                                    std::complex<double> **);
+
+        void project_degenerate_eigenvectors(double *xk_in,
+                                             const std::vector <std::vector<double>> &project_directions,
+                                             std::complex<double> **evec_out) const;
+
+        std::vector <std::vector<double>> get_projection_directions() const;
+
+        void set_projection_directions(const std::vector <std::vector<double>> projections_in);
 
     private:
         void set_default_variables();
@@ -127,8 +135,14 @@ namespace PHON_NS {
 
         void detect_imaginary_branches(double **);
 
+        std::vector <std::vector<double>> projection_directions;
 
-        double **xshift_s{};
+        int transform_eigenvectors(double *xk_in,
+                                   std::vector<double> perturb_direction,
+                                   const double dk,
+                                   Eigen::MatrixXcd &evec_sub) const;
+
+        double **xshift_s;
         char UPLO{};
         std::complex<double> ***dymat{};
         std::vector<int> **mindist_list{};

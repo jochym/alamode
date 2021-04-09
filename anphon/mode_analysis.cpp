@@ -11,6 +11,7 @@ or http://opensource.org/licenses/mit-license.php for information.
 #include "mpi_common.h"
 #include "mode_analysis.h"
 #include "anharmonic_core.h"
+#include "dielec.h"
 #include "dynamical.h"
 #include "error.h"
 #include "kpoint.h"
@@ -50,8 +51,7 @@ void ModeAnalysis::set_default_variables()
     calc_fstate_k = false;
     print_V3 = 0;
     print_V4 = 0;
-//    calc_selfenergy = 0;
-    print_zmode = false;
+    calc_selfenergy = 0;
     spectral_func = false;
 }
 
@@ -131,6 +131,11 @@ void ModeAnalysis::setup_mode_analysis()
     MPI_Bcast(&calc_realpart, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD);
     MPI_Bcast(&calc_fstate_k, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD);
     MPI_Bcast(&calc_fstate_omega, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&calc_fstate_k, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&print_V3, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&print_V4, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&calc_selfenergy, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&spectral_func, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD);
 
     unsigned int nlist;
 
@@ -217,6 +222,15 @@ void ModeAnalysis::setup_mode_analysis()
                 std::cout << "               before doing serious calculations." << std::endl;
                 std::cout << std::endl;
             }
+
+            if (kpoint->kpoint_mode == 2 && anharmonic_core->use_quartet_symmetry) {
+                anharmonic_core->use_quartet_symmetry = false;
+                if (mympi->my_rank == 0) {
+                    std::cout << std::endl;
+                    std::cout << " QUADRISYM was automatically set to 0." << std::endl;
+                    std::cout << std::endl;
+                }
+            }
         }
 
         if (calc_realpart && integration->ismear != 0) {
@@ -267,8 +281,7 @@ void ModeAnalysis::run_mode_analysis()
 
     } else {
 
-        //if (print_selfenergy) print_selfenergy(NT, T_arr);
-        print_selfenergy(NT, T_arr);
+        if (calc_selfenergy) print_selfenergy(NT, T_arr);
 
         if (print_V3 == 1) {
             print_V3_elements();
@@ -276,8 +289,10 @@ void ModeAnalysis::run_mode_analysis()
             print_Phi3_elements();
         }
 
-        if (print_zmode) {
-
+        if (print_V4 == 1) {
+            print_V4_elements();
+        } else if (print_V4 == 2) {
+            print_Phi4_elements();
         }
 
         if (calc_fstate_omega) print_frequency_resolved_final_state(NT, T_arr);
@@ -290,10 +305,10 @@ void ModeAnalysis::run_mode_analysis()
 }
 
 
-void ModeAnalysis::print_selfenergy(const int NT,
+void ModeAnalysis::print_selfenergy(const unsigned int NT,
                                     double *T_arr)
 {
-    int ns = dynamical->neval;
+    auto ns = dynamical->neval;
     int j;
 
     std::ofstream ofs_linewidth, ofs_shift;
@@ -355,8 +370,8 @@ void ModeAnalysis::print_selfenergy(const int NT,
     }
 
     for (int i = 0; i < kslist.size(); ++i) {
-        int knum = kslist[i] / ns;
-        const int snum = kslist[i] % ns;
+        const auto knum = kslist[i] / ns;
+        const auto snum = kslist[i] % ns;
 
         const auto omega = dynamical->eval_phonon[knum][snum];
 
@@ -532,7 +547,7 @@ void ModeAnalysis::print_frequency_resolved_final_state(const unsigned int NT,
     double ***gamma_final;
     double *freq_array;
     std::ofstream ofs_omega;
-    const int ns = dynamical->neval;
+    const auto ns = dynamical->neval;
 
     memory->allocate(gamma_final, NT, dos->n_energy, 2);
     memory->allocate(freq_array, dos->n_energy);
@@ -651,8 +666,8 @@ void ModeAnalysis::calc_frequency_resolved_final_state(const unsigned int N,
     double f1, f2;
     double prod_tmp[2];
     double ***ret_mpi;
-    const int nk = kpoint->nk;
-    const int ns = dynamical->neval;
+    const auto nk = kpoint->nk;
+    const auto ns = dynamical->neval;
 
     const auto epsilon = integration->epsilon;
 
@@ -673,8 +688,8 @@ void ModeAnalysis::calc_frequency_resolved_final_state(const unsigned int N,
 
     for (int ik = mympi->my_rank; ik < triplet.size(); ik += mympi->nprocs) {
         const auto multi = static_cast<double>(triplet[ik].group.size());
-        const int knum = kpoint->kpoint_irred_all[ik_in][0].knum;
-        const int knum_minus = kpoint->knum_minus[knum];
+        const auto knum = kpoint->kpoint_irred_all[ik_in][0].knum;
+        const auto knum_minus = kpoint->knum_minus[knum];
 
         arr[0] = ns * knum_minus + snum;
         const auto k1 = triplet[ik].group[0].ks[0];
@@ -778,8 +793,8 @@ void ModeAnalysis::calc_frequency_resolved_final_state_tetrahedron(const unsigne
     double f1, f2;
     double xk_tmp[3];
     double v3_tmp;
-    const int nk = kpoint->nk;
-    const int ns = dynamical->neval;
+    const auto nk = kpoint->nk;
+    const auto ns = dynamical->neval;
     const auto ns2 = ns * ns;
 
     int *kmap_identity;
@@ -810,8 +825,8 @@ void ModeAnalysis::calc_frequency_resolved_final_state_tetrahedron(const unsigne
     memory->allocate(v3_arr, npair_uniq, ns2);
     memory->allocate(delta_arr, npair_uniq, ns2, 2);
 
-    const int knum = kpoint->kpoint_irred_all[ik_in][0].knum;
-    const int knum_minus = kpoint->knum_minus[knum];
+    const auto knum = kpoint->kpoint_irred_all[ik_in][0].knum;
+    const auto knum_minus = kpoint->knum_minus[knum];
 
     memory->allocate(kmap_identity, nk);
 
@@ -958,7 +973,7 @@ void ModeAnalysis::print_momentum_resolved_final_state(const unsigned int NT,
     double norm;
     double **eval, **eval2;
     double **gamma_k;
-    const int ns = dynamical->neval;
+    const auto ns = dynamical->neval;
 
     std::complex<double> ***evec;
 
@@ -1147,17 +1162,6 @@ void ModeAnalysis::print_momentum_resolved_final_state(const unsigned int NT,
                 // K point indexes for each triangle
                 for (k = 0; k < 3; ++k) knum_triangle[k] = it.knum[k];
 
-                //for (k=0; k<3; ++k) std::cout << " " << knum_triangle[k];
-                //std::cout << std::endl;
-
-
-                //for (k = 0; k < 3; ++k) {
-                //    std::cout << "xk1 = " << xk1[0] << " " << xk1[1] << " " << xk1[2] << std::endl;
-                //    std::cout << "xk2 = " << xk_plane[knum_triangle[k]][0] << " " << xk_plane[knum_triangle[k]][1] << " " << xk_plane[knum_triangle[k]][2] << std::endl;
-                //    std::cout << "xk3 = " << xk_plane2[knum_triangle[k]][0] << " " << xk_plane2[knum_triangle[k]][1] << " " << xk_plane2[knum_triangle[k]][2] << std::endl;
-                //    std::cout << std::endl;
-                //}
-
                 for (is = 0; is < ns; ++is) {
                     for (js = 0; js < ns; ++js) {
                         // The case of delta(w1 - w2 - w3) 
@@ -1167,12 +1171,9 @@ void ModeAnalysis::print_momentum_resolved_final_state(const unsigned int NT,
                             omega_sum[k] = eval_tmp[mode]
                                            - eval[knum_triangle[k]][is]
                                            - eval2[knum_triangle[k]][js];
-                            //std::cout << " " << writes->in_kayser(eval_tmp[mode]) 
-                            //<< " " << writes->in_kayser(eval[knum_triangle[k]][is])
-                            //<< " " << writes->in_kayser(eval2[knum_triangle[k]][js]) << std::endl;
                         }
-                        if (omega_sum[0] > 0.0 && omega_sum[1] > 0.0 && omega_sum[2] > 0.0 ||
-                            omega_sum[0] < 0.0 && omega_sum[1] < 0.0 && omega_sum[2] < 0.0)
+                        if ((omega_sum[0] > 0.0 && omega_sum[1] > 0.0 && omega_sum[2] > 0.0) ||
+                            (omega_sum[0] < 0.0 && omega_sum[1] < 0.0 && omega_sum[2] < 0.0))
                             continue;
 
                         if (omega_sum[0] * omega_sum[1] < 0.0) {
@@ -1218,8 +1219,8 @@ void ModeAnalysis::print_momentum_resolved_final_state(const unsigned int NT,
                                            - eval[knum_triangle[k]][is]
                                            + eval2[knum_triangle[k]][js];
                         }
-                        if (omega_sum[0] > 0.0 && omega_sum[1] > 0.0 && omega_sum[2] > 0.0 ||
-                            omega_sum[0] < 0.0 && omega_sum[1] < 0.0 && omega_sum[2] < 0.0)
+                        if ((omega_sum[0] > 0.0 && omega_sum[1] > 0.0 && omega_sum[2] > 0.0) ||
+                            (omega_sum[0] < 0.0 && omega_sum[1] < 0.0 && omega_sum[2] < 0.0))
                             continue;
 
                         if (omega_sum[0] * omega_sum[1] < 0.0) {
@@ -1554,18 +1555,17 @@ void ModeAnalysis::print_momentum_resolved_final_state(const unsigned int NT,
     memory->deallocate(evec);
 }
 
-void ModeAnalysis::print_V3_elements()
+void ModeAnalysis::print_V3_elements() const
 {
     int j;
-    const int ns = dynamical->neval;
-    double **v3norm;
+    const auto ns = dynamical->neval;
     std::ofstream ofs_V3;
 
     std::vector<KsListGroup> triplet;
 
     for (auto i = 0; i < kslist.size(); ++i) {
-        int knum = kslist[i] / ns;
-        const int snum = kslist[i] % ns;
+        const auto knum = kslist[i] / ns;
+        const auto snum = kslist[i] % ns;
 
         const auto omega = dynamical->eval_phonon[knum][snum];
 
@@ -1591,9 +1591,10 @@ void ModeAnalysis::print_V3_elements()
                                      triplet);
         const auto nk_size = triplet.size();
 
-        memory->allocate(v3norm, nk_size, ns * ns);
+        std::vector<std::vector<double>> v3norm(nk_size,
+                                                std::vector<double>(ns * ns));
 
-        calc_V3norm2(ik_irred, snum, v3norm);
+        calc_V3norm2(ik_irred, snum, triplet, v3norm);
 
         if (mympi->my_rank == 0) {
             auto file_V3 = input->job_title + ".V3." + std::to_string(i + 1);
@@ -1641,65 +1642,247 @@ void ModeAnalysis::print_V3_elements()
 
             ofs_V3.close();
         }
-        memory->deallocate(v3norm);
     }
 }
 
 
+void ModeAnalysis::print_V4_elements() const
+{
+    int j;
+    const auto ns = dynamical->neval;
+    std::ofstream ofs_V4;
+
+    std::vector<KsListGroup> quartet;
+
+    for (int i = 0; i < kslist.size(); ++i) {
+        const auto knum = kslist[i] / ns;
+        const auto snum = kslist[i] % ns;
+
+        double omega = dynamical->eval_phonon[knum][snum];
+
+        if (mympi->my_rank == 0) {
+            std::cout << std::endl;
+            std::cout << " Number : " << std::setw(5) << i + 1 << std::endl;
+            std::cout << "  Phonon at k = (";
+            for (j = 0; j < 3; ++j) {
+                std::cout << std::setw(10) << std::fixed << kpoint->xk[knum][j];
+                if (j < 2) std::cout << ",";
+            }
+            std::cout << ")" << std::endl;
+            std::cout << "  Mode index = " << std::setw(5) << snum + 1 << std::endl;
+            std::cout << "  Frequency (cm^-1) : "
+                      << std::setw(15) << writes->in_kayser(omega) << std::endl;
+        }
+
+        int ik_irred = kpoint->kmap_to_irreducible[knum];
+
+        kpoint->get_unique_quartet_k(ik_irred,
+                                     anharmonic_core->use_quartet_symmetry,
+                                     true,
+                                     quartet);
+        const auto nk_size = quartet.size();
+
+        std::vector<std::vector<double>> v4norm(nk_size,
+                                                std::vector<double>(ns * ns * ns));
+
+        calc_V4norm2(knum, snum, quartet, v4norm);
+
+        if (mympi->my_rank == 0) {
+            std::string file_V4 = input->job_title + ".V4." + std::to_string(i + 1);
+            ofs_V4.open(file_V4.c_str(), std::ios::out);
+            if (!ofs_V4)
+                error->exit("run_mode_analysis",
+                            "Cannot open file file_V4");
+
+            ofs_V4 << "# xk = ";
+
+            for (j = 0; j < 3; ++j) {
+                ofs_V4 << std::setw(15) << kpoint->xk[knum][j];
+            }
+            ofs_V4 << std::endl;
+            ofs_V4 << "# mode = " << snum + 1 << std::endl;
+            ofs_V4 << "# Frequency = " << writes->in_kayser(omega) << std::endl;
+            ofs_V4 << "## Matrix elements |V4|^2 for given mode" << std::endl;
+            ofs_V4 << "## q1, j1, omega(q1j1) (cm^-1), "
+                      "q2, j2, omega(q2j2) (cm^-1), "
+                      "q3, j3, omega(q3j3) (cm^-1), "
+                      "|V4(-qj,q1j1,q2j2,q3j3)|^2 (cm^-2), multiplicity" << std::endl;
+
+            for (j = 0; j < nk_size; ++j) {
+                int multi = quartet[j].group.size();
+                unsigned int k1 = quartet[j].group[0].ks[0];
+                unsigned int k2 = quartet[j].group[0].ks[1];
+                unsigned int k3 = quartet[j].group[0].ks[2];
+
+                unsigned int ib = 0;
+
+                for (unsigned int is = 0; is < ns; ++is) {
+                    for (unsigned int js = 0; js < ns; ++js) {
+                        for (unsigned int ks = 0; ks < ns; ++ks) {
+                            ofs_V4 << std::setw(5) << k1 + 1 << std::setw(5) << is + 1;
+                            ofs_V4 << std::setw(15)
+                                   << writes->in_kayser(dynamical->eval_phonon[k1][is]);
+                            ofs_V4 << std::setw(5) << k2 + 1 << std::setw(5) << js + 1;
+                            ofs_V4 << std::setw(15)
+                                   << writes->in_kayser(dynamical->eval_phonon[k2][js]);
+                            ofs_V4 << std::setw(5) << k3 + 1 << std::setw(5) << ks + 1;
+                            ofs_V4 << std::setw(15)
+                                   << writes->in_kayser(dynamical->eval_phonon[k3][ks]);
+                            ofs_V4 << std::setw(15) << v4norm[j][ib];
+                            ofs_V4 << std::setw(5) << multi;
+                            ofs_V4 << std::endl;
+
+                            ++ib;
+                        }
+                        ofs_V4 << std::endl;
+                    }
+                    ofs_V4 << std::endl;
+                }
+            }
+            ofs_V4.close();
+        }
+    }
+}
+
 void ModeAnalysis::calc_V3norm2(const unsigned int ik_in,
                                 const unsigned int snum,
-                                double **ret) const
+                                const std::vector<KsListGroup> &triplet,
+                                std::vector<std::vector<double>> &ret) const
 {
     unsigned int is, js;
     unsigned int k1, k2;
     unsigned int arr[3];
-    const int ns = dynamical->neval;
-
-    const auto ns2 = ns * ns;
-
+    const auto ns = dynamical->neval;
+    const size_t ns2 = ns * ns;
     const auto factor = std::pow(0.5, 3) * std::pow(Hz_to_kayser / time_ry, 2);
-    std::vector<KsListGroup> triplet;
 
     const auto knum = kpoint->kpoint_irred_all[ik_in][0].knum;
     const auto knum_minus = kpoint->knum_minus[knum];
+    const auto ntriplet = triplet.size();
 
-    kpoint->get_unique_triplet_k(ik_in,
-                                 anharmonic_core->use_triplet_symmetry,
-                                 true,
-                                 triplet);
-#ifdef _OPENMP
-#pragma omp parallel for private(is, js, k1, k2, arr)
-#endif
-    for (int ib = 0; ib < ns2; ++ib) {
-        is = ib / ns;
-        js = ib % ns;
+    double **ret_loc = nullptr;
+    double **ret_sum = nullptr;
 
-        for (unsigned int ik = 0; ik < triplet.size(); ++ik) {
-            k1 = triplet[ik].group[0].ks[0];
-            k2 = triplet[ik].group[0].ks[1];
+    memory->allocate(ret_loc, ntriplet, ns2);
+    memory->allocate(ret_sum, ntriplet, ns2);
+
+    for (size_t ik = 0; ik < ntriplet; ++ik) {
+        for (size_t ib = 0; ib < ns2; ++ib) {
+            ret_loc[ik][ib] = 0.0;
+            ret_sum[ik][ib] = 0.0;
+        }
+    }
+
+    for (size_t ik = 0; ik < triplet.size(); ++ik) {
+        k1 = triplet[ik].group[0].ks[0];
+        k2 = triplet[ik].group[0].ks[1];
+
+        for (size_t ib = mympi->my_rank; ib < ns2; ib += mympi->nprocs) {
+            is = ib / ns;
+            js = ib % ns;
 
             arr[0] = ns * knum_minus + snum;
             arr[1] = ns * k1 + is;
             arr[2] = ns * k2 + js;
 
-            ret[ik][ib] = std::norm(anharmonic_core->V3(arr)) * factor;
+            ret_loc[ik][ib] = std::norm(anharmonic_core->V3(arr)) * factor;
         }
     }
+
+    const size_t count = ntriplet * ns2;
+    MPI_Reduce(&ret_loc[0][0], &ret_sum[0][0], count,
+               MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (mympi->my_rank == 0) {
+        for (size_t ik = 0; ik < ntriplet; ++ik) {
+            for (size_t ib = 0; ib < ns2; ++ib) {
+                ret[ik][ib] = ret_sum[ik][ib];
+            }
+        }
+    }
+
+    memory->deallocate(ret_loc);
+    memory->deallocate(ret_sum);
+}
+
+void ModeAnalysis::calc_V4norm2(const unsigned int knum,
+                                const unsigned int snum,
+                                const std::vector<KsListGroup> &quartet,
+                                std::vector<std::vector<double>> &ret) const
+{
+    unsigned int is, js, ks;
+    unsigned int k1, k2, k3;
+    unsigned int arr[4];
+    const auto ns = dynamical->neval;
+    const size_t ns2 = ns * ns;
+    const size_t ns3 = ns2 * ns;
+    double omega[3];
+
+    const double factor = std::pow(0.5, 4) * std::pow(Hz_to_kayser / time_ry, 2);
+    const auto nquartet = quartet.size();
+
+    double **ret_loc = nullptr;
+    double **ret_sum = nullptr;
+
+    memory->allocate(ret_loc, nquartet, ns3);
+    memory->allocate(ret_sum, nquartet, ns3);
+
+    for (size_t ik = 0; ik < nquartet; ++ik) {
+        for (size_t ib = 0; ib < ns3; ++ib) {
+            ret_loc[ik][ib] = 0.0;
+            ret_sum[ik][ib] = 0.0;
+        }
+    }
+
+    unsigned int knum_minus = kpoint->knum_minus[knum];
+
+    for (size_t ik = 0; ik < nquartet; ++ik) {
+        k1 = quartet[ik].group[0].ks[0];
+        k2 = quartet[ik].group[0].ks[1];
+        k3 = quartet[ik].group[0].ks[2];
+
+        for (size_t ib = mympi->my_rank; ib < ns3; ib += mympi->nprocs) {
+            is = ib / ns2;
+            js = (ib - is * ns2) / ns;
+            ks = ib % ns;
+
+            arr[0] = ns * knum_minus + snum;
+            arr[1] = ns * k1 + is;
+            arr[2] = ns * k2 + js;
+            arr[3] = ns * k3 + ks;
+
+            ret_loc[ik][ib] = std::norm(anharmonic_core->V4(arr)) * factor;
+        }
+    }
+
+    const size_t count = nquartet * ns3;
+    MPI_Reduce(&ret_loc[0][0], &ret_sum[0][0], count,
+               MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (mympi->my_rank == 0) {
+        for (size_t ik = 0; ik < nquartet; ++ik) {
+            for (size_t ib = 0; ib < ns3; ++ib) {
+                ret[ik][ib] = ret_sum[ik][ib];
+            }
+        }
+    }
+
+    memory->deallocate(ret_loc);
+    memory->deallocate(ret_sum);
 }
 
 
-void ModeAnalysis::print_Phi3_elements()
+void ModeAnalysis::print_Phi3_elements() const
 {
     int j;
-    const int ns = dynamical->neval;
-    std::complex<double> **phi3;
+    const auto ns = dynamical->neval;
     std::ofstream ofs_V3;
 
     std::vector<KsListGroup> triplet;
 
     for (auto i = 0; i < kslist.size(); ++i) {
-        int knum = kslist[i] / ns;
-        const int snum = kslist[i] % ns;
+        const auto knum = kslist[i] / ns;
+        const auto snum = kslist[i] % ns;
 
         const auto omega = dynamical->eval_phonon[knum][snum];
 
@@ -1724,8 +1907,8 @@ void ModeAnalysis::print_Phi3_elements()
                                      true,
                                      triplet, 1);
         const auto nk_size = triplet.size();
-
-        memory->allocate(phi3, nk_size, ns * ns);
+        std::vector<std::vector<std::complex<double>>> phi3(nk_size,
+                                                            std::vector<std::complex<double>>(ns * ns));
 
         calc_Phi3(knum, snum, triplet, phi3);
 
@@ -1776,7 +1959,106 @@ void ModeAnalysis::print_Phi3_elements()
 
             ofs_V3.close();
         }
-        memory->deallocate(phi3);
+    }
+}
+
+
+void ModeAnalysis::print_Phi4_elements() const
+{
+    int j;
+    auto ns = dynamical->neval;
+    std::ofstream ofs_V4;
+
+    std::vector<KsListGroup> quartet;
+
+    for (int i = 0; i < kslist.size(); ++i) {
+        const auto knum = kslist[i] / ns;
+        const auto snum = kslist[i] % ns;
+
+        double omega = dynamical->eval_phonon[knum][snum];
+
+        if (mympi->my_rank == 0) {
+            std::cout << std::endl;
+            std::cout << " Number : " << std::setw(5) << i + 1 << std::endl;
+            std::cout << "  Phonon at k = (";
+            for (j = 0; j < 3; ++j) {
+                std::cout << std::setw(10) << std::fixed << kpoint->xk[knum][j];
+                if (j < 2) std::cout << ",";
+            }
+            std::cout << ")" << std::endl;
+            std::cout << "  Mode index = " << std::setw(5) << snum + 1 << std::endl;
+            std::cout << "  Frequency (cm^-1) : "
+                      << std::setw(15) << writes->in_kayser(omega) << std::endl;
+        }
+
+        int ik_irred = kpoint->kmap_to_irreducible[knum];
+
+        kpoint->get_unique_quartet_k(ik_irred,
+                                     anharmonic_core->use_quartet_symmetry,
+                                     true,
+                                     quartet, 1);
+        unsigned int nk_size = quartet.size();
+
+        std::vector<std::vector<std::complex<double>>> phi4(nk_size,
+                                                            std::vector<std::complex<double>>(ns * ns * ns));
+        calc_Phi4(knum, snum, quartet, phi4);
+
+        if (mympi->my_rank == 0) {
+            std::string file_V4 = input->job_title + ".Phi4." + std::to_string(i + 1);
+            ofs_V4.open(file_V4.c_str(), std::ios::out);
+            if (!ofs_V4)
+                error->exit("print_phi4_element",
+                            "Cannot open file file_V3");
+
+            ofs_V4 << "# xk = ";
+
+            for (j = 0; j < 3; ++j) {
+                ofs_V4 << std::setw(15) << kpoint->xk[knum][j];
+            }
+            ofs_V4 << std::endl;
+            ofs_V4 << "# mode = " << snum + 1 << std::endl;
+            ofs_V4 << "# Frequency = " << writes->in_kayser(omega) << std::endl;
+            ofs_V4 << "## Matrix elements Phi4 for given mode" << std::endl;
+            ofs_V4 << "## q1, j1, omega(q1j1) (cm^-1), "
+                      "q2, j2, omega(q2j2) (cm^-1), "
+                      "q3, j3, omega(q3j3) (cm^-1), "
+                      "Phi4(qj,q1j1,q2j2,q3j3) (Ry/(u^{1/2}Bohr)^{4}), "
+                      "multiplicity" << std::endl;
+
+            for (j = 0; j < nk_size; ++j) {
+                int multi = quartet[j].group.size();
+                unsigned int k1 = quartet[j].group[0].ks[0];
+                unsigned int k2 = quartet[j].group[0].ks[1];
+                unsigned int k3 = quartet[j].group[0].ks[2];
+
+                unsigned int ib = 0;
+
+                for (unsigned int is = 0; is < ns; ++is) {
+                    for (unsigned int js = 0; js < ns; ++js) {
+                        for (unsigned int ks = 0; ks < ns; ++ks) {
+                            ofs_V4 << std::setw(5) << k1 + 1 << std::setw(5) << is + 1;
+                            ofs_V4 << std::setw(15)
+                                   << writes->in_kayser(dynamical->eval_phonon[k1][is]);
+                            ofs_V4 << std::setw(5) << k2 + 1 << std::setw(5) << js + 1;
+                            ofs_V4 << std::setw(15)
+                                   << writes->in_kayser(dynamical->eval_phonon[k2][js]);
+                            ofs_V4 << std::setw(5) << k3 + 1 << std::setw(5) << ks + 1;
+                            ofs_V4 << std::setw(15)
+                                   << writes->in_kayser(dynamical->eval_phonon[k3][ks]);
+                            ofs_V4 << std::setw(15) << phi4[j][ib].real();
+                            ofs_V4 << std::setw(15) << phi4[j][ib].imag();
+                            ofs_V4 << std::setw(5) << multi;
+                            ofs_V4 << std::endl;
+
+                            ++ib;
+                        }
+                        ofs_V4 << std::endl;
+                    }
+                    ofs_V4 << std::endl;
+                }
+            }
+            ofs_V4.close();
+        }
     }
 }
 
@@ -1784,46 +2066,134 @@ void ModeAnalysis::print_Phi3_elements()
 void ModeAnalysis::calc_Phi3(const unsigned int knum,
                              const unsigned int snum,
                              const std::vector<KsListGroup> &triplet,
-                             std::complex<double> **ret) const
+                             std::vector<std::vector<std::complex<double>>> &ret) const
 {
     unsigned int is, js;
     unsigned int k1, k2;
     unsigned int arr[3];
-    const int ns = dynamical->neval;
-    const auto ns2 = ns * ns;
+    const auto ns = dynamical->neval;
+    const size_t ns2 = ns * ns;
     double omega[3];
 
     const auto factor = std::pow(amu_ry, 1.5);
+    const auto ntriplet = triplet.size();
 
-#ifdef _OPENMP
-#pragma omp parallel for private(is, js, k1, k2, arr, omega)
-#endif
-    for (int ib = 0; ib < ns2; ++ib) {
-        is = ib / ns;
-        js = ib % ns;
+    std::complex<double> **ret_loc = nullptr;
+    std::complex<double> **ret_sum = nullptr;
 
-        for (unsigned int ik = 0; ik < triplet.size(); ++ik) {
-            k1 = triplet[ik].group[0].ks[0];
-            k2 = triplet[ik].group[0].ks[1];
+    memory->allocate(ret_loc, ntriplet, ns2);
+    memory->allocate(ret_sum, ntriplet, ns2);
+
+    for (size_t ik = 0; ik < ntriplet; ++ik) {
+        for (size_t ib = 0; ib < ns2; ++ib) {
+            ret_loc[ik][ib] = std::complex<double>(0.0, 0.0);
+            ret_sum[ik][ib] = std::complex<double>(0.0, 0.0);
+        }
+    }
+
+    for (size_t ik = 0; ik < ntriplet; ++ik) {
+
+        k1 = triplet[ik].group[0].ks[0];
+        k2 = triplet[ik].group[0].ks[1];
+
+        for (size_t ib = mympi->my_rank; ib < ns2; ib += mympi->nprocs) {
+
+            is = ib / ns;
+            js = ib % ns;
 
             arr[0] = ns * knum + snum;
             arr[1] = ns * k1 + is;
             arr[2] = ns * k2 + js;
 
-            omega[0] = dynamical->eval_phonon[knum][snum];
-            omega[1] = dynamical->eval_phonon[k1][is];
-            omega[2] = dynamical->eval_phonon[k2][js];
-
-            ret[ik][ib] = anharmonic_core->Phi3(arr) * factor;
+            ret_loc[ik][ib] = anharmonic_core->Phi3(arr) * factor;
         }
     }
+
+    const size_t count = ntriplet * ns2;
+    MPI_Reduce(&ret_loc[0][0], &ret_sum[0][0], count,
+               MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (mympi->my_rank == 0) {
+        for (size_t ik = 0; ik < ntriplet; ++ik) {
+            for (size_t ib = 0; ib < ns2; ++ib) {
+                ret[ik][ib] = ret_sum[ik][ib];
+            }
+        }
+    }
+
+    memory->deallocate(ret_loc);
+    memory->deallocate(ret_sum);
 }
 
 
-void ModeAnalysis::print_spectral_function(const int NT,
+void ModeAnalysis::calc_Phi4(const unsigned int knum,
+                             const unsigned int snum,
+                             const std::vector<KsListGroup> &quartet,
+                             std::vector<std::vector<std::complex<double>>> &ret) const
+{
+    unsigned int is, js, ks;
+    unsigned int k1, k2, k3;
+    unsigned int arr[4];
+    const auto ns = dynamical->neval;
+    const size_t ns2 = ns * ns;
+    const size_t ns3 = ns2 * ns;
+    double omega[3];
+
+    double factor = std::pow(amu_ry, 2.0);
+    const auto nquartet = quartet.size();
+
+    std::complex<double> **ret_loc = nullptr;
+    std::complex<double> **ret_sum = nullptr;
+
+    memory->allocate(ret_loc, nquartet, ns3);
+    memory->allocate(ret_sum, nquartet, ns3);
+
+    for (size_t ik = 0; ik < nquartet; ++ik) {
+        for (size_t ib = 0; ib < ns3; ++ib) {
+            ret_loc[ik][ib] = std::complex<double>(0.0, 0.0);
+            ret_sum[ik][ib] = std::complex<double>(0.0, 0.0);
+        }
+    }
+
+    for (size_t ik = 0; ik < nquartet; ++ik) {
+        k1 = quartet[ik].group[0].ks[0];
+        k2 = quartet[ik].group[0].ks[1];
+        k3 = quartet[ik].group[0].ks[2];
+
+        for (size_t ib = mympi->my_rank; ib < ns3; ib += mympi->nprocs) {
+            is = ib / ns2;
+            js = (ib - is * ns2) / ns;
+            ks = ib % ns;
+
+            arr[0] = ns * knum + snum;
+            arr[1] = ns * k1 + is;
+            arr[2] = ns * k2 + js;
+            arr[3] = ns * k3 + ks;
+
+            ret_loc[ik][ib] = anharmonic_core->Phi4(arr) * factor;
+        }
+    }
+
+    const size_t count = nquartet * ns3;
+    MPI_Reduce(&ret_loc[0][0], &ret_sum[0][0], count,
+               MPI_CXX_DOUBLE_COMPLEX, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (mympi->my_rank == 0) {
+        for (size_t ik = 0; ik < nquartet; ++ik) {
+            for (size_t ib = 0; ib < ns3; ++ib) {
+                ret[ik][ib] = ret_sum[ik][ib];
+            }
+        }
+    }
+
+    memory->deallocate(ret_loc);
+    memory->deallocate(ret_sum);
+}
+
+void ModeAnalysis::print_spectral_function(const unsigned int NT,
                                            const double *T_arr)
 {
-    const int ns = dynamical->neval;
+    auto ns = dynamical->neval;
     int i, j;
     int iomega;
     double **self3_imag, **self3_real;
@@ -1834,7 +2204,7 @@ void ModeAnalysis::print_spectral_function(const int NT,
     const auto delta_omega = dos->delta_e;
     double omega2[2];
 
-    const int nomega = static_cast<unsigned int>((Omega_max - Omega_min) / delta_omega) + 1;
+    const auto nomega = static_cast<unsigned int>((Omega_max - Omega_min) / delta_omega) + 1;
 
     memory->allocate(omega_array, nomega);
     memory->allocate(self3_imag, NT, nomega);
@@ -1846,8 +2216,8 @@ void ModeAnalysis::print_spectral_function(const int NT,
     }
 
     for (i = 0; i < kslist.size(); ++i) {
-        int knum = kslist[i] / ns;
-        const int snum = kslist[i] % ns;
+        auto knum = kslist[i] / ns;
+        const auto snum = kslist[i] % ns;
         const auto ik_irred = kpoint->kmap_to_irreducible[knum];
 
         if (mympi->my_rank == 0) {
@@ -1926,3 +2296,6 @@ void ModeAnalysis::print_spectral_function(const int NT,
     memory->deallocate(self3_imag);
     memory->deallocate(self3_real);
 }
+
+
+

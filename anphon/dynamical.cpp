@@ -29,7 +29,8 @@
 #include <cmath>
 #include <algorithm>
 #include <numeric>
-
+#include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 
 using namespace PHON_NS;
 
@@ -153,6 +154,27 @@ void Dynamical::setup_dynamical()
     MPI_Bcast(&nonanalytic, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
     MPI_Bcast(&band_connection, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
 
+    // Bcast projection_directions
+    unsigned int nsize_proj = projection_directions.size();
+    MPI_Bcast(&nsize_proj, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+
+    for (auto i = 0; i < nsize_proj; ++i) {
+        double vec[3];
+        std::vector<double> vec2(3);
+
+        if (mympi->my_rank == 0) {
+            for (auto j = 0; j < 3; ++j) {
+                vec[j] = projection_directions[i][j];
+            }
+        }
+        MPI_Bcast(&vec[0], 3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+        if (mympi->my_rank > 0) {
+            for (auto j = 0; j < 3; ++j) vec2[j] = vec[j];
+            projection_directions.push_back(vec2);
+        }
+    }
+
     if (nonanalytic) {
         setup_dielectric();
 
@@ -245,7 +267,6 @@ void Dynamical::prepare_mindist_list(std::vector<int> **mindist_out) const
     memory->deallocate(xcrd);
 }
 
-
 double Dynamical::distance(double *x1,
                            double *x2) const
 {
@@ -253,7 +274,6 @@ double Dynamical::distance(double *x1,
                      + std::pow(x1[1] - x2[1], 2)
                      + std::pow(x1[2] - x2[2], 2));
 }
-
 
 void Dynamical::eval_k(double *xk_in,
                        double *kvec_in,
@@ -354,7 +374,6 @@ void Dynamical::eval_k(double *xk_in,
     memory->deallocate(WORK);
     memory->deallocate(amat);
 }
-
 
 void Dynamical::eval_k_ewald(double *xk_in,
                              double *kvec_in,
@@ -606,7 +625,6 @@ void Dynamical::calc_nonanalytic_k(double *xk_in,
     }
 }
 
-
 void Dynamical::calc_nonanalytic_k2(const double *xk_in,
                                     double *kvec_na_in,
                                     std::complex<double> **dymat_na_out) const
@@ -649,7 +667,6 @@ void Dynamical::calc_nonanalytic_k2(const double *xk_in,
 
             for (unsigned int jat = 0; jat < natmin; ++jat) {
                 unsigned int atm_p2 = system->map_p2s[jat][0];
-
 
                 for (i = 0; i < 3; ++i) {
                     for (j = 0; j < 3; ++j) {
@@ -707,7 +724,6 @@ void Dynamical::calc_nonanalytic_k2(const double *xk_in,
     }
 }
 
-
 void Dynamical::diagonalize_dynamical_all()
 {
     unsigned int nk = kpoint->nk;
@@ -764,8 +780,29 @@ void Dynamical::diagonalize_dynamical_all()
     if (kpoint->kpoint_mode == 2 && phon->mode == "RTA") {
         detect_imaginary_branches(dynamical->eval_phonon);
     }
-}
 
+    // modify_eigenvectors();
+    if (!projection_directions.empty()) {
+        if (mympi->my_rank == 0) {
+            for (const auto &it : projection_directions) {
+                for (const auto &it2 : it) {
+                    std::cout << std::setw(15) << it2;
+                }
+                std::cout << '\n';
+            }
+
+            for (auto ik = 0; ik < nk; ++ik) {
+                project_degenerate_eigenvectors(kpoint->xk[ik],
+                                                projection_directions,
+                                                evec_phonon[ik]);
+            }
+        }
+
+        MPI_Bcast(&evec_phonon[0][0][0],
+                  nk * dynamical->neval * dynamical->neval,
+                  MPI_CXX_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
+    }
+}
 
 void Dynamical::modify_eigenvectors() const
 {
@@ -820,12 +857,308 @@ void Dynamical::modify_eigenvectors() const
     //}
 }
 
+void Dynamical::project_degenerate_eigenvectors(double *xk_in,
+                                                const std::vector<std::vector<double>> &project_directions,
+                                                std::complex<double> **evec_out) const
+{
+    int i, j;
+    const auto ns = this->neval;
+
+    //
+    // The projector is given in the real space Cartesian coordinate.
+    // Let's transform the basis into the crystal coordinate and normalize the norm to unity.
+    //
+    std::vector<std::vector<double>> directions;
+    std::vector<double> vec(3);
+    for (const auto &it : project_directions) {
+        for (i = 0; i < 3; ++i) {
+            vec[i] = it[i];
+        }
+        rotvec(&vec[0], &vec[0], system->lavec_p, 'T');
+
+        auto norm = 0.0;
+        for (i = 0; i < 3; ++i) {
+            norm += vec[i] * vec[i];
+        }
+        norm = std::sqrt(norm);
+        for (i = 0; i < 3; ++i) vec[i] = vec[i] / norm;
+
+        directions.push_back(vec);
+    }
+
+    //
+    // Diagonalize dymat at xk_in and get degeneracy information.
+    //
+    Eigen::MatrixXcd dymat(ns, ns);
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> saes;
+
+    std::complex<double> **dymat_tmp;
+
+    memory->allocate(dymat_tmp, ns, ns);
+
+    calc_analytic_k(xk_in, fcs_phonon->fc2_ext, dymat_tmp);
+
+    if (std::sqrt(std::pow(std::fmod(xk_in[0], 0.5), 2.0)
+                  + std::pow(std::fmod(xk_in[1], 0.5), 2.0)
+                  + std::pow(std::fmod(xk_in[2], 0.5), 2.0)) < eps) {
+
+        for (i = 0; i < 3 * system->natmin; ++i) {
+            for (j = 0; j < 3 * system->natmin; ++j) {
+                dymat_tmp[i][j] = std::complex<double>(dymat_tmp[i][j].real(), 0.0);
+            }
+        }
+    }
+
+    for (i = 0; i < ns; ++i) {
+        for (j = 0; j < ns; ++j) {
+            dymat(i, j) = dymat_tmp[i][j];
+        }
+    }
+    memory->deallocate(dymat_tmp);
+
+    saes.compute(dymat);
+
+    auto eval_orig = saes.eigenvalues();
+    auto evec_orig = saes.eigenvectors();
+
+    //
+    // Construct degeneracy information
+    //
+    const double tol_omega = 1.0e-14; // Approximately equal to (0.01 cm^{-1})^2
+
+    std::vector<int> degeneracy_at_k;
+
+    degeneracy_at_k.clear();
+    double omega_prev = eval_orig[0];
+    int ideg = 1;
+
+    for (j = 1; j < ns; ++j) {
+        double omega_now = eval_orig[j];
+
+        if (std::abs(omega_now - omega_prev) < tol_omega) {
+            ++ideg;
+        } else {
+            degeneracy_at_k.push_back(ideg);
+            ideg = 1;
+            omega_prev = omega_now;
+        }
+    }
+    degeneracy_at_k.push_back(ideg);
+
+    const auto ndirec = directions.size();
+
+    //
+    // For each degenerate subset, apply the perturbation field in the direction
+    // defined by "directions".
+    //
+    int ishift = 0;
+    const double dk = 1.0e-3; // Small value may be preferable.
+    Eigen::MatrixXcd evec_new(ns, ns);
+
+    for (int iset : degeneracy_at_k) {
+
+        if (iset == 1) {
+            // Non degenerate case. just copy the original eigenvector
+
+            evec_new.block(0, ishift, ns, 1) = evec_orig.block(0, ishift, ns, 1);
+
+        } else if (iset == 2) {
+            // Doubly degenerate case.
+
+            if (ndirec == 0) {
+                evec_new.block(0, ishift, ns, 2) = evec_orig.block(0, ishift, ns, 2);
+            } else {
+
+                Eigen::MatrixXcd evec_sub = evec_orig.block(0, ishift, ns, 2);
+                auto is_lifted = transform_eigenvectors(xk_in, directions[0], dk, evec_sub);
+
+                if (is_lifted == 0 and ndirec >= 2) {
+                    evec_sub = evec_orig.block(0, ishift, ns, 2);
+                    is_lifted = transform_eigenvectors(xk_in, directions[1], dk, evec_sub);
+
+                    if (is_lifted == 0 and ndirec >= 3) {
+                        evec_sub = evec_orig.block(0, ishift, ns, 2);
+                        is_lifted = transform_eigenvectors(xk_in, directions[2], dk, evec_sub);
+                    }
+                }
+
+                if (is_lifted == 0) {
+                    std::cout << " xk = ";
+                    for (i = 0; i < 3; ++i) std::cout << std::setw(15) << xk_in[i];
+                    std::cout << '\n';
+                    std::cout << " All projections did not lift the two-fold degeneracy.\n"
+                                 " Try another projection!\n";
+
+                    evec_new.block(0, ishift, ns, 2) = evec_orig.block(0, ishift, ns, 2);
+                } else {
+                    evec_new.block(0, ishift, ns, 2) = evec_sub.block(0, 0, ns, 2);
+                }
+            }
+
+        } else if (iset == 3) {
+            // Triply degenerate case
+
+            if (ndirec == 0) {
+
+                evec_new.block(0, ishift, ns, 3) = evec_orig.block(0, ishift, ns, 3);
+
+            } else if (ndirec == 1) {
+
+                Eigen::MatrixXcd evec_sub = evec_orig.block(0, ishift, ns, 3);
+                auto is_lifted = transform_eigenvectors(xk_in, directions[0], dk, evec_sub);
+
+                evec_new.block(0, ishift, ns, 3) = evec_sub.block(0, 0, ns, 3);
+                if (is_lifted == 0) {
+                    std::cout << " xk = ";
+                    for (i = 0; i < 3; ++i) std::cout << std::setw(15) << xk_in[i];
+                    std::cout << '\n';
+                    std::cout << " The first projection did not lift the two-fold degeneracy.\n"
+                                 " Try another projection!\n";
+                }
+
+            } else if (ndirec >= 2) {
+
+                Eigen::MatrixXcd evec_sub = evec_orig.block(0, ishift, ns, 3);
+                auto is_lifted1 = transform_eigenvectors(xk_in, directions[0], dk, evec_sub);
+
+                Eigen::MatrixXcd evec_sub2 = evec_sub.block(0, 1, ns, 2);
+                auto is_lifted2 = transform_eigenvectors(xk_in, directions[1], dk, evec_sub2);
+
+                evec_new.block(0, ishift, ns, 1) = evec_sub.block(0, 0, ns, 1);
+                evec_new.block(0, ishift + 1, ns, 2) = evec_sub2.block(0, 0, ns, 2);
+
+                if (is_lifted1 == 0 || is_lifted2 == 0) {
+                    std::cout << " xk = ";
+                    for (i = 0; i < 3; ++i) std::cout << std::setw(15) << xk_in[i];
+                    std::cout << '\n';
+                    std::cout << " The given projections did not lift the three-fold degeneracy.\n"
+                                 " Try another set of projections!\n";
+                }
+
+            }
+
+        } else {
+            std::cout << iset << '\n';
+            error->exitall("project_degenerate_eigenvectors", "This should not happen.");
+        }
+
+        ishift += iset;
+    }
+
+#ifdef _DEBUG
+    std::cout << "Check if the original dynamical matrix can be recovered\n";
+    std::cout << evec_new * eval_orig.asDiagonal() * evec_new.adjoint() - dymat << std::endl;
+#endif
+
+    for (i = 0; i < ns; ++i) {
+        for (j = 0; j < ns; ++j) {
+            evec_out[i][j] = evec_new(j, i);
+        }
+    }
+}
+
+int Dynamical::transform_eigenvectors(double *xk_in,
+                                      std::vector<double> perturb_direction,
+                                      const double dk,
+                                      Eigen::MatrixXcd &evec_sub) const
+{
+    int i;
+    double xk_shift[3], xk_shift_minus[3];
+    const auto ns = this->neval;
+    const auto tol_ediff = dk * dk * 1.0e-2;
+    std::complex<double> **dymat_dq, **dymat_dq_minus;
+
+    int is_lifted = 0;
+
+    Eigen::MatrixXcd ddymat(ns, ns);
+
+    for (i = 0; i < 3; ++i) {
+        xk_shift[i] = xk_in[i] + perturb_direction[i] * dk;
+        xk_shift_minus[i] = xk_in[i] - perturb_direction[i] * dk;
+    }
+
+//    for (i = 0; i < 3; ++i) {
+//        std::cout << std::setw(15) << perturb_direction[i] << std::endl;
+//    }
+//    std::cout << std::endl;
+
+    memory->allocate(dymat_dq, ns, ns);
+    memory->allocate(dymat_dq_minus, ns, ns);
+    calc_analytic_k(xk_shift, fcs_phonon->fc2_ext, dymat_dq);
+    calc_analytic_k(xk_shift_minus, fcs_phonon->fc2_ext, dymat_dq_minus);
+
+    for (auto is = 0; is < ns; ++is) {
+        for (auto js = 0; js < ns; ++js) {
+            // This treatment helps to avoid unwanted small imaginary components
+            // in the perturbation matrix.
+            ddymat(is, js) = (dymat_dq[is][js] + dymat_dq_minus[is][js]) / (2.0 * dk);
+        }
+    }
+    memory->deallocate(dymat_dq);
+    memory->deallocate(dymat_dq_minus);
+
+
+    // The perturbation matrix (the size is ndeg x ndeg)
+    auto pertmat = evec_sub.adjoint() * ddymat * evec_sub;
+
+    // Diagonalize
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> saes;
+
+    saes.compute(pertmat);
+    auto eval_pert = saes.eigenvalues();
+    auto Umat = saes.eigenvectors();
+
+    // Transform the eigenvectors and keep it for later.
+    // auto should not be used here.
+    Eigen::MatrixXcd evec_tmp = evec_sub * Umat;
+
+    const auto ndeg = eval_pert.size();
+
+    if (ndeg == 2) {
+
+        if (std::abs(eval_pert[0] - eval_pert[1]) > tol_ediff * std::abs(eval_pert[1])) {
+            // Degeneracy is lifted!
+            //
+            // We assume that the applied perturbation increases the energy.
+            // If this is the case, the eigenvector along the perturbed direction should be
+            // the second one, whose energy is higher than the first one.
+            //
+            // swap the order of the eigenvectors
+            evec_sub.block(0, 0, ns, 1) = evec_tmp.block(0, 1, ns, 1);
+            evec_sub.block(0, 1, ns, 1) = evec_tmp.block(0, 0, ns, 1);
+            is_lifted = 1;
+        }
+
+    } else if (ndeg == 3) {
+
+        if (std::abs(eval_pert[0] - eval_pert[1]) > tol_ediff * std::abs(eval_pert[1])) {
+            // Degeneracy is lifted!
+            //
+            // When the states split as (3) --> (1, 2),
+            //
+            evec_sub.block(0, 0, ns, 1) = evec_tmp.block(0, 0, ns, 1);
+            evec_sub.block(0, 1, ns, 2) = evec_tmp.block(0, 1, ns, 2);
+            is_lifted = 1;
+        } else if (std::abs(eval_pert[1] - eval_pert[2]) > tol_ediff * std::abs(eval_pert[2])) {
+            // Degeneracy is lifted!
+            //
+            // When the states split as (3) --> (2, 1),
+            //
+            evec_sub.block(0, 0, ns, 1) = evec_tmp.block(0, 2, ns, 1);
+            evec_sub.block(0, 1, ns, 2) = evec_tmp.block(0, 0, ns, 2);
+            is_lifted = 1;
+        }
+    }
+
+    return is_lifted;
+}
+
 void Dynamical::setup_dielectric(const unsigned int verbosity)
 {
     if (borncharge) memory->deallocate(borncharge);
 
     memory->allocate(borncharge, system->natmin, 3, 3);
-    if (mympi->my_rank == 0) load_born(symmetrize_borncharge);
+    if (mympi->my_rank == 0) load_born(symmetrize_borncharge, verbosity);
 
     MPI_Bcast(&dielec[0][0], 9, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&borncharge[0][0][0], 9 * system->natmin, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -1017,12 +1350,10 @@ void Dynamical::load_born(const unsigned int flag_symmborn,
     std::cout << std::scientific;
 }
 
-
 double Dynamical::fold(const double x) const
 {
     return x - static_cast<double>(nint(x));
 }
-
 
 double Dynamical::freq(const double x) const
 {
@@ -1064,7 +1395,6 @@ void Dynamical::calc_participation_ratio_all(std::complex<double> ***evec,
 
     memory->deallocate(atomic_pr);
 }
-
 
 void Dynamical::calc_atomic_participation_ratio(std::complex<double> *evec,
                                                 double *ret) const
@@ -1236,4 +1566,14 @@ void Dynamical::detect_imaginary_branches(double **eval)
             std::cout << " you can safely ignore this message." << std::endl << std::endl << std::flush;
         }
     }
+}
+
+void Dynamical::set_projection_directions(const std::vector<std::vector<double>> projections_in)
+{
+    projection_directions = projections_in;
+}
+
+std::vector<std::vector<double>> Dynamical::get_projection_directions() const
+{
+    return projection_directions;
 }
